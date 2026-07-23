@@ -92,6 +92,10 @@ if [ -d "$OSROOT/usr/lib/modules" ]; then
 	[ -x "$OSROOT/usr/bin/speakersafetyd" ] && ok "speakersafetyd" || bad "speakersafetyd missing (speakers stay disabled)"
 else
 	bad "no /usr/lib/modules found in root.img (unrecognized layout)"
+	echo "  -- layout diagnostics --"
+	ls -la "$R" 2>/dev/null || true
+	find "$R" -maxdepth 3 2>/dev/null | head -40 || true
+	df -h "$R" 2>/dev/null || true
 fi
 umount "$WORK/root"
 

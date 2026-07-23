@@ -1,0 +1,29 @@
+name: Selftest
+
+# Exercises the payload test harness itself with synthetic good/bad payloads
+# on every change — no real image needed. If this is green, the harness's
+# verdicts on real payloads can be trusted.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: shellcheck
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          shellcheck scripts/*.sh
+  selftest:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Harness selftest (good payload passes, bad payload fails)
+        run: sudo ./scripts/selftest.sh

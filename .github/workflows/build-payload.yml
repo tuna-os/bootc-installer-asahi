@@ -38,11 +38,25 @@ jobs:
       - name: Build payload
         run: sudo -E ./scripts/make-payload.sh "${{ inputs.image }}" "${{ inputs.name }}"
 
-      - name: Sanity-check payload contents
+      - name: "Test: payload structure, boot chain, rootfs, installer_data"
+        run: sudo ./scripts/test-payload.sh "out/${{ inputs.name }}.zip" out/installer_data.json
+
+      - name: Install qemu + U-Boot firmware
         run: |
-          set -euo pipefail
-          unzip -l "out/${{ inputs.name }}.zip" | grep -E "esp/m1n1/boot.bin|root.img"
-          python3 -m json.tool out/installer_data.json > /dev/null && echo "installer_data.json valid"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-arm qemu-utils u-boot-qemu parted dosfstools
+
+      - name: "Test: boot the reconstructed install (U-Boot EFI chain)"
+        run: sudo ./scripts/test-boot-payload.sh "out/${{ inputs.name }}.zip"
+
+      - name: Upload boot serial log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: payload-boot-serial-${{ github.run_id }}
+          path: serial-payload-boot.log
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Upload payload artifact
         uses: actions/upload-artifact@v7

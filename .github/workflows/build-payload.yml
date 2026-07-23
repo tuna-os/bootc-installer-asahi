@@ -44,7 +44,7 @@ jobs:
       - name: Install qemu + U-Boot firmware
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-arm qemu-utils u-boot-qemu parted dosfstools
+          sudo apt-get install -y --no-install-recommends qemu-system-arm qemu-utils u-boot-qemu ipxe-qemu parted dosfstools
 
       - name: "Test: boot the reconstructed install (U-Boot EFI chain)"
         run: sudo ./scripts/test-boot-payload.sh "out/${{ inputs.name }}.zip"

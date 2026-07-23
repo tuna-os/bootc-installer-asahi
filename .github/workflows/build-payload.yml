@@ -1,0 +1,56 @@
+name: Build asahi-installer payload
+
+# D0 of docs/DESIGN.md: package a bootc aarch64 image as an asahi-installer
+# payload (esp/ + root.img zip + installer_data.json). Dispatch against any
+# asahi-capable image; artifact-only until R2 credentials are wired.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Asahi-capable bootc image ref"
+        default: "ghcr.io/tuna-os/bonito:gnome-asahi-testing"
+        type: string
+      name:
+        description: "Payload name"
+        default: "tunaos-bootstrap"
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  payload:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Login to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GH_TOKEN" | sudo podman login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: Pull image
+        run: sudo podman pull "${{ inputs.image }}"
+
+      - name: Build payload
+        run: sudo -E ./scripts/make-payload.sh "${{ inputs.image }}" "${{ inputs.name }}"
+
+      - name: Sanity-check payload contents
+        run: |
+          set -euo pipefail
+          unzip -l "out/${{ inputs.name }}.zip" | grep -E "esp/m1n1/boot.bin|root.img"
+          python3 -m json.tool out/installer_data.json > /dev/null && echo "installer_data.json valid"
+
+      - name: Upload payload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.name }}-payload
+          path: out/
+          retention-days: 14
+
+      # TODO(R2): rclone upload to download.tunaos.org/asahi once secrets are
+      # set (same pattern as the tunaOS ISO pipelines), then point a branded
+      # `curl | sh` bootstrap at the hosted installer_data.json.

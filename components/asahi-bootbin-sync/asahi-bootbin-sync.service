@@ -1,0 +1,17 @@
+[Unit]
+Description=Sync m1n1 boot.bin with deployed boot components (Asahi/bootc)
+Documentation=https://github.com/tuna-os/bootc-installer-asahi
+# Apple Silicon only; needs the ESP mounted and the OS fully deployed.
+ConditionKernelVersion=asahi
+After=local-fs.target boot-efi.mount
+RequiresMountsFor=/boot/efi
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/asahi-bootbin-sync
+# boot.bin writes must survive; don't let a mid-write kill corrupt the ESP.
+KillMode=none
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

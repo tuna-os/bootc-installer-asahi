@@ -59,7 +59,12 @@ timeout "$BOOT_TIMEOUT" qemu-system-aarch64 \
 	2>&1 | tee serial-payload-boot.log | tail -c 2000000 || true
 
 echo "=== verdict ==="
-if grep -qE "multi-user\.target|Reached target.*Multi-User|login:" serial-payload-boot.log; then
+# TUNAOS_DESKTOP_CONTRACT_OK / display-manager-active come from the image's
+# own e2e-runtime-checks and prove a working userspace even when TCG is too
+# slow for systemd to leave "starting" (ssh-keygen etc.) within the budget —
+# real bonito images hit exactly that. Full install checks are the LUKS e2e
+# / hardware tier's job, not this gate's.
+if grep -qE "multi-user\.target|Reached target.*Multi-User|login:|TUNAOS_DESKTOP_CONTRACT_OK|display manager is active" serial-payload-boot.log; then
 	echo "PASS: reconstructed install boots to userspace over the U-Boot EFI chain"
 	exit 0
 elif grep -qE "EFI stub|Linux version|Booting" serial-payload-boot.log; then

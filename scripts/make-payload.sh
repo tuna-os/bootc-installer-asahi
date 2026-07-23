@@ -79,7 +79,7 @@ if [ ! -f "$WORK/esp/m1n1/boot.bin" ]; then
         [ -f "$MNT/$c" ] && M1N1_BIN="$MNT/$c" && break
     done
     UBOOT_BIN=""
-    for c in usr/share/uboot/apple_m1/u-boot-nodtb.bin usr/lib/u-boot/apple_m1/u-boot-nodtb.bin usr/lib/asahi-boot/u-boot.bin; do
+    for c in usr/share/uboot/apple_m1/u-boot-nodtb.bin usr/lib/u-boot-asahi/u-boot-nodtb.bin usr/lib/u-boot/apple_m1/u-boot-nodtb.bin usr/lib/asahi-boot/u-boot-nodtb.bin usr/lib/asahi-boot/u-boot.bin; do
         [ -f "$MNT/$c" ] && UBOOT_BIN="$MNT/$c" && break
     done
     KVER=$(ls "$MNT/usr/lib/modules" | sort -V | tail -1)

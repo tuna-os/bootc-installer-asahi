@@ -27,7 +27,7 @@ for c in /usr/lib64/m1n1/m1n1.bin /usr/lib/m1n1/m1n1.bin /usr/lib/asahi-boot/m1n
     [ -f "$c" ] && m1n1_bin="$c" && break
 done
 uboot_bin=""
-for c in /usr/share/uboot/apple_m1/u-boot-nodtb.bin /usr/lib/u-boot/apple_m1/u-boot-nodtb.bin /usr/lib/asahi-boot/u-boot.bin; do
+for c in /usr/share/uboot/apple_m1/u-boot-nodtb.bin /usr/lib/u-boot-asahi/u-boot-nodtb.bin /usr/lib/u-boot/apple_m1/u-boot-nodtb.bin /usr/lib/asahi-boot/u-boot-nodtb.bin /usr/lib/asahi-boot/u-boot.bin; do
     [ -f "$c" ] && uboot_bin="$c" && break
 done
 kver=$(ls /usr/lib/modules | sort -V | tail -1)

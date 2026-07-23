@@ -53,7 +53,8 @@ ACCEL=tcg; CPU=neoverse-n1
 timeout "$BOOT_TIMEOUT" qemu-system-aarch64 \
 	-M virt -accel "$ACCEL" -cpu "$CPU" -smp 4 -m 6144 \
 	-bios "$UBOOT_BIN" \
-	-drive file="$WORK/disk.img",format=raw,if=virtio \
+	-drive file="$WORK/disk.img",format=raw,if=none,id=hd0 \
+	-device virtio-blk-pci,drive=hd0,romfile= \
 	-nographic -serial mon:stdio \
 	2>&1 | tee serial-payload-boot.log | tail -c 2000000 || true
 

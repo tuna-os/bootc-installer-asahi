@@ -17,7 +17,7 @@ on:
         type: string
       root_size_gb:
         description: "Root partition size (GB) for the loopback install"
-        default: "16"
+        default: "24"
         type: string
 
 permissions:

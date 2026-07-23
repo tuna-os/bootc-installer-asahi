@@ -22,7 +22,7 @@ set -euo pipefail
 
 IMAGE="${1:?usage: make-payload.sh <bootc-image-ref> <payload-name> [root-size-gb]}"
 NAME="${2:?usage: make-payload.sh <bootc-image-ref> <payload-name> [root-size-gb]}"
-ROOT_GB="${3:-16}"
+ROOT_GB="${3:-24}"
 OUT="${OUT_DIR:-out}"
 BASE_URL="${BASE_URL:-https://download.tunaos.org/asahi}"
 

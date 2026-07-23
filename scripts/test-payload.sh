@@ -69,7 +69,7 @@ R="$WORK/root"
 # bootc roots put the OS under a deployment; tolerate both plain and ostree layouts
 OSROOT="$R"
 if [ ! -d "$R/usr/lib/modules" ]; then
-	dep=$(find "$R/ostree/deploy" -maxdepth 4 -type d -name "*.0" 2>/dev/null | head -1)
+	dep=$(find "$R/ostree/deploy" -maxdepth 5 -type d -name "*.0" 2>/dev/null | head -1)
 	[ -n "$dep" ] && OSROOT="$dep"
 fi
 if [ -d "$OSROOT/usr/lib/modules" ]; then

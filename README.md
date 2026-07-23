@@ -1,4 +1,4 @@
-# fisherman-asahi
+# bootc-installer-asahi
 
 The Apple Silicon (Asahi Linux) installer path for TunaOS-family bootc images
 — and anyone else's (Dakota, Bluefin, Bazzite): a macOS-driven install flow

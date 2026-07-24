@@ -1,4 +1,4 @@
-# Tuna Dive (macOS app) — SKELETON, UNVERIFIED
+# Tuna Dive (macOS app) — SKELETON, partially CI-verified
 
 D3 from [`docs/DESIGN.md`](../../docs/DESIGN.md): a SwiftUI app driving the
 forked asahi-installer backend
@@ -6,20 +6,25 @@ forked asahi-installer backend
 D2) over its `--json` stdio protocol
 ([`docs/json-mode.md`](https://github.com/hanthor/asahi-installer/blob/json-machine-mode/docs/json-mode.md)).
 
-**This was written with no Swift toolchain available** — no macOS host, no
-`swift`/`swiftc` binary, in the environment that produced it. Nothing here
-has been compiled, run, or type-checked. Structure and intent should be
-right; assume any individual line could have a real Swift compile error
-until `swift build` says otherwise.
+**Written with no local Swift toolchain** — no macOS host in the environment
+that produced it. It was, however, subsequently built and tested for real on
+a GitHub-hosted `macos-14` runner (Xcode 15.4, Swift 5.10) via
+[`tuna-dive-app-build.yml`](../../.github/workflows/tuna-dive-app-build.yml)
+(dispatch manually with `gh workflow run tuna-dive-app-build.yml --ref
+feat/d3-tuna-dive-app-skeleton`, or check the Actions tab): **`swift build`
+succeeds and all 8 tests in `BackendEventDecodingTests` pass**, with zero
+compiler warnings. That proves the Codable models, the protocol round-trip,
+and the SwiftUI view graph all type-check and link. It does **not** prove:
+the app actually launches and shows a window, `InstallerProcess` correctly
+drives a real `python3 main.py --json` subprocess, or any of the recoveryOS/
+disk/Wi-Fi flows behave right on real hardware — none of that is exercised
+by `swift build`/`swift test` in CI.
 
-## First things to do on a real Mac
+## First things to do on the real Mac
 
-1. `cd macos-app/TunaDive && swift build` — fix whatever doesn't compile.
-2. `swift test` — `Tests/TunaDiveTests/BackendEventDecodingTests.swift`
-   round-trips the exact JSON fixtures from `docs/json-mode.md`; if these
-   fail, the Swift models have drifted from the Python protocol, not the
-   other way around.
-3. Point `InstallerProcess` at a real `python3` + the fork's `src/main.py`
+1. `cd macos-app/TunaDive && swift run` — confirm the app actually launches
+   and the welcome screen renders (CI proves it compiles, not that it runs).
+2. Point `InstallerProcess` at a real `python3` + the fork's `src/main.py`
    and confirm one real `ask`/`answer` round-trip before building out the
    rest of the flow.
 

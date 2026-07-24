@@ -1,0 +1,26 @@
+[Unit]
+Description=Tuna Dive first-boot agent (install-config.json -> unattended bootc install)
+Documentation=https://github.com/tuna-os/bootc-installer-asahi
+# Apple Silicon only; same convention as asahi-bootbin-sync.service.
+ConditionKernelVersion=asahi
+After=network-online.target local-fs.target
+Wants=network-online.target
+# greetd's fisherman-driven interactive UI is the fallback: it must not race
+# this unit, and should only actually show a login/wizard screen once this
+# unit has either found nothing to do (exit 2) or failed (exit 1). On success
+# this unit reboots the machine itself, so greetd never starts this boot.
+Before=greetd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/tuna-dive-agent
+# exit 2 = no install-config.json present yet: the expected state on every
+# boot before the macOS app has written one. Not a failure worth systemd
+# marking the unit "failed" over.
+SuccessExitStatus=2
+# The install itself (image pull + bootc deploy) can legitimately take many
+# minutes on a slow network; do not impose a start timeout.
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

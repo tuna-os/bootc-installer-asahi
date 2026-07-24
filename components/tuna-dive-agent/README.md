@@ -1,0 +1,67 @@
+# tuna-dive-agent
+
+D1's first-boot agent for the "tuna-dive" bootstrap image (see
+[`docs/DESIGN.md`](../../docs/DESIGN.md)): translates `install-config.json`
+(written by the Tuna Dive macOS app onto the ESP) into a
+[fisherman](https://github.com/tuna-os/fisherman) `recipe.json` and drives an
+unattended `bootc install to-filesystem`.
+
+**Not** `bootc install to-disk` — that path (used by this repo's own
+`scripts/make-payload.sh` / `scripts/test-payload.sh`) is debug/QEMU-only,
+where fisherman partitions a scratch disk itself. In the real flow the
+asahi-installer backend has already partitioned the disk on the macOS side
+(stub macOS, ESP, root partition), so this agent hands fisherman those
+pre-made partitions via `recipe.json`'s `customMounts`, never its
+disk-auto-partition path.
+
+## Contract
+
+- Locates `install-config.json` at `<ESP>/tuna-dive/install-config.json`
+  (candidates: `/boot/efi`, `/efi`, `/boot` — same ESP-detection convention
+  as [`asahi-bootbin-sync`](../asahi-bootbin-sync)). Override with
+  `TUNA_DIVE_CONFIG_PATH` for testing.
+- Schema: [`install-config.schema.json`](install-config.schema.json).
+- Optional Wi-Fi connect (`nmcli`) if `wifi.ssid` is present; non-fatal on
+  failure (ethernet may still work).
+- Optional cosign signature verification when `cosignIdentity` is set —
+  refuses to deploy an unverified image if `cosign` isn't installed in the
+  bootstrap. `TUNA_DIVE_SKIP_VERIFY=1` is a dev/test-only escape hatch, never
+  for production bootstrap images.
+- Builds a fisherman recipe with `customMounts` (ESP + root, both
+  pre-partitioned), `bootloader: "systemd"` (per fisherman's own docs, this
+  is the setting for Bluefin/Dakota-style systemd-boot images — which is
+  every TunaOS/Dakota/Bluefin Asahi target), and `imageType: "bootc"`.
+- Shreds the generated recipe.json after a successful install (it carries the
+  LUKS passphrase / user password in the clear); `TUNA_DIVE_RUN_DIR` is
+  tmpfs-backed in production, so this is belt-and-braces.
+- Reboots into the installed system on success unless `TUNA_DIVE_NO_REBOOT=1`.
+
+### Exit codes (load-bearing — the bootstrap's greetd session branches on these)
+
+| Code | Meaning | greetd fallback |
+|------|---------|------------------|
+| `0`  | Installed successfully | none — the agent already rebooted |
+| `2`  | No `install-config.json` yet (expected first-boot state) | show the interactive fisherman-driven UI (`tuna-installer-*`; contract documented as `INSTALLER-FRONTENDS.md` in tuna-os/tunaOS) |
+| `1`  | Config present but the install failed | show the interactive UI, with `/run/tuna-dive/install.log` surfaced for diagnosis |
+
+## Ship it in every tuna-dive bootstrap image
+
+- script → `/usr/libexec/tuna-dive-agent`
+- unit → `/usr/lib/systemd/system/tuna-dive-agent.service` (+ preset enable,
+  `WantedBy=multi-user.target`)
+
+Requires `jq` and (for install) the `fisherman` binary reachable on `$PATH`.
+`nmcli` and `cosign` are optional — their absence only disables the
+corresponding feature (Wi-Fi connect, signature verification) rather than
+failing the whole agent, except that a `cosignIdentity` in the config with no
+`cosign` binary is treated as a hard failure (refuse to deploy unverified).
+
+## Testing
+
+`./test-agent.sh` exercises the full exit-code contract and the recipe.json
+shape using `/bin/true` / `/bin/false` / `cat` as fisherman stand-ins — no
+real disks, network, or fisherman/bootc binary required. Run on every change:
+
+```sh
+./test-agent.sh
+```

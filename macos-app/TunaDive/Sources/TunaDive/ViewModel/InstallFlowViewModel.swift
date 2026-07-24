@@ -38,6 +38,49 @@ final class InstallFlowViewModel: ObservableObject {
         filesystem: "btrfs", hostname: "")
 
     private var process: InstallerProcess?
+    private var e2eTimer: Timer?
+
+    /// Starts polling for drive-mode directives (tuna-dive-agent#6 §2). No-op
+    /// unless TUNADIVE_E2E_DRIVE=1 — see E2EDrive's doc comment. Call once,
+    /// e.g. from the app's init.
+    func startE2EDriveIfEnabled() {
+        guard E2EDrive.isEnabled else { return }
+        reportE2EState()
+        e2eTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in self.pollE2EDirective() }
+        }
+    }
+
+    private func pollE2EDirective() {
+        guard let directive = E2EDrive.nextDirective() else { return }
+        switch directive {
+        case .selectCatalogEntry(let imgref):
+            selectedEntry = catalog?.entries.first { $0.imgref == imgref }
+        case .setHostname(let value):
+            config.hostname = value
+        case .advance:
+            switch step {
+            case .welcome: advanceToCatalog()
+            case .catalog: advanceToOptions()
+            case .options: advanceToDiskSlider()
+            case .recoveryWalkthrough: confirmRecoveryOSComplete()
+            default: break
+            }
+        case .answerAsk(let value):
+            answer(value)
+        }
+        reportE2EState()
+    }
+
+    private func reportE2EState() {
+        var state: [String: Any] = ["step": "\(step)"]
+        if let entry = selectedEntry { state["selectedEntry"] = entry.imgref }
+        state["hostname"] = config.hostname
+        state["pendingAskKind"] = pendingAsk?.kind.rawValue ?? NSNull()
+        state["logCount"] = log.count
+        E2EDrive.report(state)
+    }
 
     func loadCatalog(from url: URL) {
         guard let data = try? Data(contentsOf: url) else { return }
@@ -108,5 +151,6 @@ final class InstallFlowViewModel: ObservableObject {
         case .ask(let ask):
             pendingAsk = ask
         }
+        reportE2EState()
     }
 }

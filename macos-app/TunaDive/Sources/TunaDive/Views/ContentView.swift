@@ -30,5 +30,6 @@ struct ContentView: View {
                 .padding()
             }
         }
+        .onAppear { flow.startE2EDriveIfEnabled() }
     }
 }

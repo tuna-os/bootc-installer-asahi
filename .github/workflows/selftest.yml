@@ -21,10 +21,14 @@ jobs:
       - name: shellcheck
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
-          shellcheck -S warning scripts/*.sh
+          shellcheck -S warning scripts/*.sh components/*/*.sh
   selftest:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - name: Harness selftest (good payload passes, bad payload fails)
         run: sudo ./scripts/selftest.sh
+      - name: tuna-dive-agent selftest (install-config.json -> recipe.json contract)
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+          ./components/tuna-dive-agent/test-agent.sh

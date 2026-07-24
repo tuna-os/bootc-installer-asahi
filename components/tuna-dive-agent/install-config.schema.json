@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/tuna-os/bootc-installer-asahi/components/tuna-dive-agent/install-config.schema.json",
+  "title": "install-config.json",
+  "description": "Written by the Tuna Dive macOS app onto the ESP (<ESP>/tuna-dive/install-config.json) after the user completes the wizard. Consumed once, at first boot, by tuna-dive-agent, which never re-reads it after a successful install.",
+  "type": "object",
+  "required": ["targetImgref", "rootPartition", "espPartition", "filesystem", "hostname"],
+  "properties": {
+    "targetImgref": {
+      "type": "string",
+      "description": "OCI ref to deploy, e.g. ghcr.io/tuna-os/bonito:gnome-asahi. Must resolve to an arm64 bootc image."
+    },
+    "rootPartition": {
+      "type": "string",
+      "description": "Block device for the root filesystem, already created by the asahi-installer backend (e.g. /dev/nvme0n1p5)."
+    },
+    "espPartition": {
+      "type": "string",
+      "description": "Block device for the EFI system partition shared with recoveryOS/m1n1 (e.g. /dev/nvme0n1p1)."
+    },
+    "filesystem": {
+      "type": "string",
+      "enum": ["xfs", "ext4", "btrfs"],
+      "description": "Filesystem to format rootPartition with. zfs is not offered here (fisherman's zfs path assumes whole-disk auto-partitioning, not a pre-made partition)."
+    },
+    "hostname": { "type": "string" },
+    "encryption": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["none", "luks-passphrase", "tpm2-luks", "tpm2-luks-passphrase"]
+        },
+        "passphrase": { "type": "string" }
+      }
+    },
+    "user": {
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "fullname": { "type": "string" },
+        "password": { "type": "string" },
+        "groups": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "wifi": {
+      "type": "object",
+      "description": "Read from the current macOS network by the app (SSID only, per DESIGN.md — never the password); the user re-enters the passphrase on the Mac side and it is written here in the clear for one-shot consumption on tmpfs.",
+      "properties": {
+        "ssid": { "type": "string" },
+        "psk": { "type": "string" }
+      }
+    },
+    "sshEnabled": {
+      "type": "boolean",
+      "description": "Enables sshd in the bootstrap for the headless/M1-Air-test-loop path (D1)."
+    },
+    "cosignIdentity": {
+      "type": "string",
+      "description": "Expected cosign certificate identity for targetImgref. When set, tuna-dive-agent verifies the image signature before deploying and refuses to proceed on mismatch."
+    },
+    "cosignIssuer": {
+      "type": "string",
+      "description": "Expected cosign OIDC issuer, paired with cosignIdentity."
+    }
+  }
+}

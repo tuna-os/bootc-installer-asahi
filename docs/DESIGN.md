@@ -92,18 +92,29 @@ Why this wins:
   handles it; the bootstrap's dracut module consumes it).
 
 ## Milestones
-1. **D0** — CI job builds `tuna-dive-boot` (bonito-asahi minimal) + payload
-   zip + installer_data.json to R2; manual install with stock asahi-installer
-   TUI pointed at our URL; QEMU boot-gate the bootstrap on every build.
-2. **D1** — first-boot agent: install-config.json → unattended
+1. **D0** — *(payload pipeline + QEMU boot-gate proven; R2 upload still
+   blocked on bucket credentials being added as repo secrets)* CI job builds
+   `tuna-dive-boot` (bonito-asahi minimal) + payload zip + installer_data.json
+   to R2; manual install with stock asahi-installer TUI pointed at our URL;
+   QEMU boot-gate the bootstrap on every build.
+2. **D1** — *(done, #7)* first-boot agent: install-config.json → unattended
    `bootc install` of a chosen ref; headless/ssh path proven (this is also
-   how the M1 Air test loop gets provisioned).
-3. **D2** — `--json` machine mode upstreamable PR to asahi-installer.
+   how the M1 Air test loop gets provisioned). Implemented as
+   [`components/tuna-dive-agent`](../components/tuna-dive-agent), which hands
+   fisherman the asahi-installer backend's already-partitioned disk via
+   `customMounts` and runs `bootc install to-filesystem` — `to-disk` remains
+   debug/QEMU-only (D0's own payload harness).
+3. **D2** — `--json` machine mode for asahi-installer. Implement and prove it
+   locally first; do **not** open the upstream PR without James's go-ahead
+   (standing "no upstream outreach" rule from the project handoff).
 4. **D3** — SwiftUI app driving the backend; notarized DMG; catalog.json
-   generation in CI.
+   generation in CI. Needs a macOS host to compile/notarize/run — cannot be
+   verified from this (Linux) environment; treat any code produced here as an
+   unverified skeleton, not a working deliverable.
 5. **D4** — polish: recoveryOS walkthrough UX, LUKS via systemd-repart
    options, Wi-Fi handoff from macOS (SystemConfiguration read of current
-   SSID; never the password — user re-enters).
+   SSID; never the password — user re-enters). Depends on D3's app shell, so
+   inherits the same "needs a Mac to verify" limit.
 
 ## Open questions for James
 - Naming: "Tuna Dive" is a placeholder; fisherman-adjacent naming preferred?

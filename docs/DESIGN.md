@@ -115,14 +115,21 @@ Why this wins:
    (diskutil/bless/bputil) still needs a real Mac to verify. **Not** opened
    as an upstream PR — awaiting James's go-ahead per the standing "no
    upstream outreach" rule.
-4. **D3** — SwiftUI app driving the backend; notarized DMG; catalog.json
-   generation in CI. Needs a macOS host to compile/notarize/run — cannot be
-   verified from this (Linux) environment; treat any code produced here as an
-   unverified skeleton, not a working deliverable.
+4. **D3** — *(skeleton scaffolded; `swift build`/`swift test` CI-green on a
+   GitHub macos-14 runner, not yet run on real hardware)* SwiftUI app
+   ([`macos-app/TunaDive`](../macos-app/TunaDive)) driving the backend;
+   notarized DMG; catalog.json generation in CI. `.github/workflows/
+   tuna-dive-app-build.yml` gives real compiler feedback without needing a
+   physical Mac — dispatch manually against any branch. Still needs actual
+   hardware to prove the app launches, drives a real backend subprocess, and
+   partitions a real disk. Biggest open design gap, documented in the app's
+   README: no defined contract yet for how install-config.json gets written
+   onto the ESP after the backend finishes partitioning.
 5. **D4** — polish: recoveryOS walkthrough UX, LUKS via systemd-repart
    options, Wi-Fi handoff from macOS (SystemConfiguration read of current
-   SSID; never the password — user re-enters). Depends on D3's app shell, so
-   inherits the same "needs a Mac to verify" limit.
+   SSID; never the password — user re-enters). Depends on D3's app shell;
+   real UX/hardware verification still needs a Mac, though the CI build
+   workflow removes that constraint for pure compile-correctness.
 
 ## Open questions for James
 - Naming: "Tuna Dive" is a placeholder; fisherman-adjacent naming preferred?

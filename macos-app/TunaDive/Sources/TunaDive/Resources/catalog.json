@@ -1,0 +1,12 @@
+{
+  "generatedAt": "placeholder-not-CI-generated",
+  "entries": [
+    {
+      "variant": "bonito",
+      "desktop": "gnome",
+      "stream": "stable",
+      "imgref": "ghcr.io/tuna-os/bonito:gnome-asahi",
+      "description": "Bonito with GNOME, Asahi build. Placeholder entry — catalog.json generation in CI (from registry-map.yaml) doesn't exist yet."
+    }
+  ]
+}

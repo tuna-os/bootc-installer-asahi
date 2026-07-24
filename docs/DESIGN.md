@@ -104,9 +104,17 @@ Why this wins:
    fisherman the asahi-installer backend's already-partitioned disk via
    `customMounts` and runs `bootc install to-filesystem` — `to-disk` remains
    debug/QEMU-only (D0's own payload harness).
-3. **D2** — `--json` machine mode for asahi-installer. Implement and prove it
-   locally first; do **not** open the upstream PR without James's go-ahead
-   (standing "no upstream outreach" rule from the project handoff).
+3. **D2** — *(implemented, unverified on real hardware)* `--json` machine
+   mode for asahi-installer: [hanthor/asahi-installer@json-machine-mode](
+   https://github.com/hanthor/asahi-installer/tree/json-machine-mode)
+   ([protocol doc](https://github.com/hanthor/asahi-installer/blob/json-machine-mode/docs/json-mode.md)).
+   Structured stdio events/answers routed through the two chokepoints every
+   TTY prompt already funnels through, so the ~80 existing call sites needed
+   no changes and the default TTY path is provably byte-for-byte unchanged.
+   18 protocol-layer tests pass in CI; the full interactive flow
+   (diskutil/bless/bputil) still needs a real Mac to verify. **Not** opened
+   as an upstream PR — awaiting James's go-ahead per the standing "no
+   upstream outreach" rule.
 4. **D3** — SwiftUI app driving the backend; notarized DMG; catalog.json
    generation in CI. Needs a macOS host to compile/notarize/run — cannot be
    verified from this (Linux) environment; treat any code produced here as an

@@ -3,8 +3,19 @@
 D1's first-boot agent for the "tuna-dive" bootstrap image (see
 [`docs/DESIGN.md`](../../docs/DESIGN.md)): translates `install-config.json`
 (written by the Tuna Dive macOS app onto the ESP) into a
-[fisherman](https://github.com/tuna-os/fisherman) `recipe.json` and drives an
-unattended `bootc install to-filesystem`.
+[fisherman](https://github.com/projectbluefin/fisherman) `recipe.json` and
+drives an unattended `bootc install to-filesystem`.
+
+**Fork choice matters here.** wootc (the Windows sibling of this project,
+see [tuna-dive-agent#6](https://github.com/tuna-os/bootc-installer-asahi/issues/6))
+vendors `projectbluefin/fisherman`, which has real fixes `tuna-os/fisherman`
+lacks as of 2026-07-18 (six days stale at time of writing): an explicit
+`mount -t` for the freshly-formatted root (the deployer initramfs can't
+probe the filesystem type, so an xfs root gets attempted as ext4 and fails),
+and `chroot <target> useradd` instead of `useradd --root` (`--root` also
+initializes the *host's* PAM/SELinux stack and fails against an otherwise
+perfectly writable target). Point `TUNA_DIVE_FISHERMAN_BIN` at a binary
+built from `projectbluefin/fisherman`, not `tuna-os/fisherman`.
 
 **Not** `bootc install to-disk` — that path (used by this repo's own
 `scripts/make-payload.sh` / `scripts/test-payload.sh`) is debug/QEMU-only,

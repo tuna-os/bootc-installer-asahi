@@ -40,7 +40,10 @@
       "properties": {
         "username": { "type": "string" },
         "fullname": { "type": "string" },
-        "password": { "type": "string" },
+        "password": {
+          "type": "string",
+          "description": "Should be a $6$ SHA-512-crypt hash, not plaintext — matches wootc's vault.json convention (hashed in the macOS app before this file is ever written to disk). fisherman's chpasswd step (projectbluefin/fisherman only — see tuna-dive-agent#6) auto-detects a $-prefixed value here and passes chpasswd -e so the hash is stored verbatim rather than re-hashed; a plain string is also accepted (chpasswd hashes it normally) but means the password sat in this file in the clear until the install completed."
+        },
         "groups": { "type": "array", "items": { "type": "string" } }
       }
     },

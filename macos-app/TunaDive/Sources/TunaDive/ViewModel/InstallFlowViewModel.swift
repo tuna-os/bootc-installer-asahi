@@ -47,7 +47,8 @@ final class InstallFlowViewModel: ObservableObject {
         guard E2EDrive.isEnabled else { return }
         reportE2EState()
         e2eTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.pollE2EDirective() }
+            guard let self else { return }
+            Task { @MainActor in self.pollE2EDirective() }
         }
     }
 

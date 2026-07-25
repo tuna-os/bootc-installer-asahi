@@ -1,5 +1,29 @@
 # Hardware/Mac testing checklist
 
+> ## 🛑 No destructive hardware install until #19–#24 and #26–#27 are resolved
+>
+> James's call, 2026-07-25. Non-destructive steps (0–3: build, launch, protocol
+> round trips) are fine and several are already green. Anything that writes a
+> partition table or runs fisherman against a real disk waits on that set.
+>
+> Current state of the gate:
+>
+> | Issue | Subject | State |
+> |---|---|---|
+> | [#19](https://github.com/tuna-os/bootc-installer-asahi/issues/19) | D1 cannot format the root it runs from | **decided** ([ADR 0001](adr/0001-bootstrap-partition-layout.md)), not implemented |
+> | [#20](https://github.com/tuna-os/bootc-installer-asahi/issues/20) | LUKS silently skipped in manual path | **fails closed** (#29); real support open |
+> | [#21](https://github.com/tuna-os/bootc-installer-asahi/issues/21) | Secrets persist on ESP; cleanup not failure-safe | **partly fixed** (#18, #29); one-shot secret channel open |
+> | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | designed, not implemented |
+> | [#23](https://github.com/tuna-os/bootc-installer-asahi/issues/23) | Both units never started | **fixed** (#29) |
+> | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | open |
+> | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | open |
+> | [#27](https://github.com/tuna-os/bootc-installer-asahi/issues/27) | Payload contains no agent | open |
+>
+> Also open but outside the gate: [#25](https://github.com/tuna-os/bootc-installer-asahi/issues/25)
+> (backend exits 0 on failure, so the app can tell you to bless a failed
+> install) and [#28](https://github.com/tuna-os/bootc-installer-asahi/issues/28)
+> (kernel selected by version sort can pick a non-Asahi kernel).
+
 For the first real-hardware pass once James is on the MacBook. Ordered
 cheapest/lowest-risk first — each step should pass before moving to the next.
 

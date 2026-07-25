@@ -23,7 +23,16 @@ LOG_FILE="$RUN_DIR/install.log"
 RECIPE_FILE="$RUN_DIR/recipe.json"
 FISHERMAN_BIN="${BOOTSAHI_FISHERMAN_BIN:-fisherman}"
 
-log() { echo "$AGENT_NAME: $*" | tee -a "$LOG_FILE" >&2; }
+# Write to both the log file and stderr WITHOUT a pipeline. The obvious
+# `echo ... | tee -a "$LOG_FILE" >&2` puts a pipe on the hot path of every
+# log line, and under `set -o pipefail` any tee hiccup kills the whole agent
+# — including between "fisherman succeeded" and the credential cleanup
+# below, which would leave recipe.json (LUKS passphrase, user password) on
+# disk. No pipeline, no pipefail exposure.
+log() {
+	printf '%s: %s\n' "$AGENT_NAME" "$*" >>"$LOG_FILE" 2>/dev/null || true
+	printf '%s: %s\n' "$AGENT_NAME" "$*" >&2
+}
 
 find_install_config() {
     # ${BOOTSAHI_CONFIG_PATH} is the test/dev override; production always reads
@@ -150,7 +159,11 @@ main() {
     log "install complete"
     # Zero out the recipe (it carries the LUKS passphrase / user password in
     # the clear) before reboot; RUN_DIR is tmpfs so this is belt-and-braces.
-    shred -u "$RECIPE_FILE" 2>/dev/null || rm -f "$RECIPE_FILE"
+    # shred(1) is GNU coreutils and absent on macOS/BSD — the `|| rm -f`
+    # fallback covers that, and the trailing `|| true` guarantees a failure
+    # here can never abort the agent before the file is gone. Removal is
+    # what actually matters; overwriting is the bonus when shred exists.
+    shred -u "$RECIPE_FILE" 2>/dev/null || rm -f "$RECIPE_FILE" || true
 
     if [ "${BOOTSAHI_NO_REBOOT:-0}" != "1" ]; then
         log "rebooting into the installed system"

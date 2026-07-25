@@ -90,8 +90,12 @@ Work this decision creates, none of it done yet:
 - The agent must **resolve** the target root at runtime and refuse anything it
   cannot prove is the installer-created target — never its own root, never an
   Apple/APFS/recovery partition (#22).
-- `build_recipe`'s root mount stays as-is until the above lands. Under the
-  current payload it still names the partition the agent runs from.
+- `build_recipe`'s root mount stays as-is until the above lands. Because this
+  ADR puts a *second* Linux partition on the disk, a wrong value there became
+  plausible rather than obviously bogus — so the agent now refuses a
+  `rootPartition`/`espPartition` that resolves to the device backing `/`, and
+  refuses the two being the same device. That guard is what makes the
+  half-finished state safe to have in tree; it is not a substitute for #22.
 - The bootstrap partition is dead space after install. Reclaiming it is a
   follow-up; leaving it as a rescue system is a defensible alternative and
   costs a fixed, small amount of disk.

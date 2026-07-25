@@ -176,6 +176,67 @@ reject_unsupported_encryption() {
     return 0
 }
 
+# block_device_id echoes a device's "major:minor" in decimal, or nothing.
+# Comparing major:minor rather than paths is deliberate: /dev/nvme0n1p5,
+# /dev/disk/by-partuuid/<uuid>, and a symlink chain all name the same device,
+# and a path comparison would call them different.
+block_device_id() {
+    local dev="$1" hex
+    hex=$(stat -Lc '%t:%T' "$dev" 2>/dev/null) || return 0
+    [ -n "$hex" ] && [ "$hex" != ":" ] || return 0
+    printf '%d:%d\n' "0x${hex%%:*}" "0x${hex##*:}" 2>/dev/null || true
+}
+
+# active_root_device_id echoes major:minor of whatever backs "/", from
+# /proc/self/mountinfo — a plain file read, no findmnt/util-linux dependency,
+# and mountinfo reports major:minor directly (field 3).
+active_root_device_id() {
+    awk '$5 == "/" { print $3; exit }' /proc/self/mountinfo 2>/dev/null || true
+}
+
+# refuse_active_root is the guard that makes the current half-finished state
+# safe to have in tree. Since ADR 0001 the disk carries TWO Linux partitions —
+# the bootstrap this agent is running from, and the target it installs into —
+# so a stale or guessed rootPartition now names a plausible-looking Linux
+# partition either way. Handing fisherman the bootstrap's own partition means
+# mkfs on the filesystem containing PID 1 (issue #19).
+#
+# Until the runtime PARTUUID resolution in #22 lands, positively refusing the
+# one catastrophic value is what stands between "documented as wrong" and
+# "destroys the running system".
+refuse_active_root() {
+    local cfg="$1" root esp root_id esp_id active_id
+    root=$(jq -r '.rootPartition // empty' "$cfg")
+    esp=$(jq -r '.espPartition // empty' "$cfg")
+
+    if [ -n "$root" ] && [ "$root" = "$esp" ]; then
+        log "rootPartition and espPartition are the same device ($root); refusing"
+        return 1
+    fi
+
+    active_id=$(active_root_device_id)
+    if [ -z "$active_id" ]; then
+        # Cannot read mountinfo: not a running Linux system (the test harness on
+        # macOS, for instance). Nothing destructive can be verified here, and
+        # check_apple_hardware has already gated real hardware.
+        log "cannot determine the device backing /; skipping active-root check"
+        return 0
+    fi
+
+    root_id=$(block_device_id "$root")
+    if [ -n "$root_id" ] && [ "$root_id" = "$active_id" ]; then
+        log "rootPartition ($root) is the device backing / — fisherman would mkfs the"
+        log "filesystem this agent is running from. Refusing (see issue #19 / ADR 0001)."
+        return 1
+    fi
+    esp_id=$(block_device_id "$esp")
+    if [ -n "$esp_id" ] && [ "$esp_id" = "$active_id" ]; then
+        log "espPartition ($esp) is the device backing /; refusing"
+        return 1
+    fi
+    return 0
+}
+
 main() {
     # 0700 so the recipe (LUKS passphrase, Wi-Fi PSK) and log are not readable by
     # other local users under a permissive umask; umask 077 covers files created
@@ -219,8 +280,12 @@ main() {
         fi
     done
 
-    # Before any network use or disk mutation: refuse configs we cannot honour.
+    # Before any network use or disk mutation: refuse configs we cannot honour,
+    # and refuse the one that would destroy the running system.
     if ! reject_unsupported_encryption "$cfg"; then
+        exit 1
+    fi
+    if ! refuse_active_root "$cfg"; then
         exit 1
     fi
 

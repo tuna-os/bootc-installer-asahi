@@ -119,7 +119,7 @@ cat >"$WORK/good.json" <<'EOF'
 {
   "targetImgref": "ghcr.io/tuna-os/bonito:gnome-asahi",
   "rootPartition": "/dev/null",
-  "espPartition": "/dev/null",
+  "espPartition": "/dev/zero",
   "filesystem": "btrfs",
   "hostname": "tuna-mac",
   "user": {"username": "james", "groups": ["wheel"]},
@@ -128,12 +128,12 @@ cat >"$WORK/good.json" <<'EOF'
 EOF
 
 cat >"$WORK/missing-field.json" <<'EOF'
-{"targetImgref": "x", "rootPartition": "/dev/null", "espPartition": "/dev/null", "filesystem": "btrfs"}
+{"targetImgref": "x", "rootPartition": "/dev/null", "espPartition": "/dev/zero", "filesystem": "btrfs"}
 EOF
 
 cat >"$WORK/cosign.json" <<'EOF'
 {
-  "targetImgref": "x", "rootPartition": "/dev/null", "espPartition": "/dev/null",
+  "targetImgref": "x", "rootPartition": "/dev/null", "espPartition": "/dev/zero",
   "filesystem": "btrfs", "hostname": "h",
   "cosignIdentity": "https://example.test/signer", "cosignIssuer": "https://example.test/oidc"
 }
@@ -142,7 +142,7 @@ EOF
 cat >"$WORK/encrypted.json" <<'EOF'
 {
   "targetImgref": "ghcr.io/tuna-os/bonito:gnome-asahi",
-  "rootPartition": "/dev/null", "espPartition": "/dev/null",
+  "rootPartition": "/dev/null", "espPartition": "/dev/zero",
   "filesystem": "btrfs", "hostname": "h",
   "encryption": {"type": "tpm2-luks", "passphrase": "hunter2"}
 }
@@ -266,6 +266,39 @@ check_exit "exit code (not Apple Silicon -> nothing to do, NOT success)" 2 "$r"
 echo "==> run dir is not world-readable"
 r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-ok")
 check "run dir mode" "700" "$(stat -c '%a' "$r" 2>/dev/null || stat -f '%Lp' "$r" 2>/dev/null)"
+
+echo "==> config naming the ACTIVE root partition must be refused (issue #19)"
+# Build a config whose rootPartition is literally the device backing / on this
+# machine. Handing that to fisherman means mkfs on the filesystem containing
+# PID 1. Skipped where / is not backed by a real block device (container
+# overlayfs, macOS) — there is nothing to name, so nothing to refuse.
+active_src=$(awk '$5 == "/" { print $3; exit }' /proc/self/mountinfo 2>/dev/null || true)
+active_dev=""
+if [ -n "$active_src" ]; then
+	for d in /dev/* /dev/mapper/* /dev/nvme*; do
+		[ -b "$d" ] || continue
+		hex=$(stat -Lc '%t:%T' "$d" 2>/dev/null) || continue
+		[ "$(printf '%d:%d' "0x${hex%%:*}" "0x${hex##*:}" 2>/dev/null)" = "$active_src" ] || continue
+		active_dev="$d"
+		break
+	done
+fi
+if [ -n "$active_dev" ]; then
+	jq --arg dev "$active_dev" '.rootPartition = $dev' "$WORK/good.json" >"$WORK/active-root.json"
+	r=$(run_agent "$WORK/active-root.json" "$STUBS/fisherman-ok")
+	check_exit "exit code (rootPartition == active root -> refuse)" 1 "$r"
+	check "no recipe generated when refusing the active root" "" \
+		"$(ls "$r/recipe-captured.json" 2>/dev/null || true)"
+	grep -q 'is the device backing /' "$r/install.log" ||
+		{ echo "FAIL: refusal did not explain itself in the log"; fail=1; }
+else
+	echo "  skip: / is not backed by a discoverable block device here ($active_src)"
+fi
+
+echo "==> rootPartition == espPartition must be refused"
+jq '.espPartition = .rootPartition' "$WORK/good.json" >"$WORK/same-dev.json"
+r=$(run_agent "$WORK/same-dev.json" "$STUBS/fisherman-ok")
+check_exit "exit code (root == esp -> refuse)" 1 "$r"
 
 if [ "$fail" -ne 0 ]; then
 	echo "SELFTEST FAILED"

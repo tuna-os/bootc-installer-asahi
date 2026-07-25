@@ -7,7 +7,7 @@ import Foundation
 /// Packaging question, unresolved (see README.md): where does `python3`
 /// come from at runtime for an end user with no Xcode CLT installed? The
 /// asahi-installer project's own `install.sh` already solves this for the
-/// TUI/curl-|-sh path by provisioning a venv; TunaDive likely needs to reuse
+/// TUI/curl-|-sh path by provisioning a venv; Bootsahi likely needs to reuse
 /// that rather than bundling a Python runtime itself. Not decided here.
 final class InstallerProcess {
     private let process = Process()

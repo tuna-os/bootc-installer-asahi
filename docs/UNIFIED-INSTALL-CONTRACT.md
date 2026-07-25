@@ -30,12 +30,12 @@ initramfs needs some config (image ref, LUKS type) available from
 ## Why Asahi doesn't need the split
 
 `install-config.json` already lives on the ESP (per `DESIGN.md`), and the
-tuna-dive bootstrap mounts the ESP as one of its first actions regardless
+bootsahi bootstrap mounts the ESP as one of its first actions regardless
 (it needs `<ESP>/m1n1/boot.bin` and the bootstrap root itself lives there
 too) — there's no "before any mount" phase analogous to wootc's Windows
 cmdline trick where a single JSON file doesn't already work. **Recommend
 keeping Asahi's contract as the single-file `install-config.json`** already
-specified in `components/tuna-dive-agent/install-config.schema.json` —
+specified in `components/bootsahi-agent/install-config.schema.json` —
 simpler, and wootc's split is solving a problem Asahi doesn't have, not a
 pattern worth importing for its own sake.
 
@@ -62,7 +62,7 @@ the ESP.
 
 ## A real, non-hypothetical blocker found while writing this
 
-`components/tuna-dive-agent` was built against `github.com/tuna-os/fisherman`.
+`components/bootsahi-agent` was built against `github.com/tuna-os/fisherman`.
 wootc actually vendors `github.com/projectbluefin/fisherman`, which is **six
 days ahead** (as of this writing) and has two fixes `tuna-os/fisherman`
 lacks entirely:
@@ -77,7 +77,7 @@ lacks entirely:
   a target whose `/etc` is otherwise perfectly writable (proven on
   bluefin:lts per wootc's fisherman fork commit history).
 
-`tuna-dive-agent`'s README and the hardware testing checklist have been
+`bootsahi-agent`'s README and the hardware testing checklist have been
 updated to point at `projectbluefin/fisherman` accordingly. This should be
 fixed before any real-disk testing, not after — these are exactly the kind
 of failures that only show up once you're not on a mocked stdin.
@@ -87,6 +87,6 @@ of failures that only show up once you're not on a mocked stdin.
 The RFC lists the clevis/dracut-omit landmine under "already fixed for you"
 in the shared fisherman. It isn't — it lives in **wootc's own deployer
 script** (`payload/deployer/deploy.sh`'s `DRACUT_OMIT` handling), a
-post-install dracut regen step wootc runs that `tuna-dive-agent` doesn't
+post-install dracut regen step wootc runs that `bootsahi-agent` doesn't
 currently have an equivalent of. Not urgent today (D1 has no dracut-regen
 step yet), but worth a comment marker if/when Asahi's agent ever grows one.

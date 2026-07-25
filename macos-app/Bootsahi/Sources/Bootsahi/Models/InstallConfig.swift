@@ -1,8 +1,8 @@
 import Foundation
 
-/// Mirrors components/tuna-dive-agent/install-config.schema.json in the
-/// parent repo — TunaDive writes this file to the ESP as
-/// `<ESP>/tuna-dive/install-config.json` for the D1 first-boot agent to
+/// Mirrors components/bootsahi-agent/install-config.schema.json in the
+/// parent repo — Bootsahi writes this file to the ESP as
+/// `<ESP>/bootsahi/install-config.json` for the D1 first-boot agent to
 /// consume. Keep the two schemas in sync by hand; there's no shared codegen
 /// between this Swift model and the JSON Schema (yet).
 struct InstallConfig: Codable {
@@ -37,7 +37,7 @@ struct InstallConfig: Codable {
 }
 
 /// One entry in catalog.json — generated in CI from registry-map.yaml per
-/// DESIGN.md's "Catalog = the registries" principle. Schema is TunaDive's
+/// DESIGN.md's "Catalog = the registries" principle. Schema is Bootsahi's
 /// own invention (no CI generation exists yet); adjust once that job lands.
 struct CatalogEntry: Codable, Identifiable, Hashable {
     var id: String { imgref }

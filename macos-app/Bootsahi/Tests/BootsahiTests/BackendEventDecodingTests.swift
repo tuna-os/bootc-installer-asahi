@@ -1,5 +1,5 @@
 import XCTest
-@testable import TunaDive
+@testable import Bootsahi
 
 /// Fixtures below are copied verbatim from asahi-installer's docs/json-mode.md
 /// (hanthor/asahi-installer@json-machine-mode) — keep them in sync with that

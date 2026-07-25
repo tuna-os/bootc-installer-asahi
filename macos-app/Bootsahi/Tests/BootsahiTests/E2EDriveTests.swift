@@ -1,9 +1,9 @@
 import XCTest
-@testable import TunaDive
+@testable import Bootsahi
 
-/// Covers the drive-mode directive decoder (tuna-dive-agent#6 §2). Doesn't
+/// Covers the drive-mode directive decoder (issue #6 §2). Doesn't
 /// (and can't, from here) test the polling/file-I/O side of E2EDrive itself —
-/// that needs a real TUNADIVE_E2E_DRIVE=1 run, not attempted yet.
+/// that needs a real BOOTSAHI_E2E_DRIVE=1 run, not attempted yet.
 final class E2EDriveTests: XCTestCase {
     private func decode(_ json: String) throws -> E2EDrive.Directive {
         try JSONDecoder().decode(E2EDrive.Directive.self, from: Data(json.utf8))
@@ -43,7 +43,7 @@ final class E2EDriveTests: XCTestCase {
     }
 
     func testDisabledByDefault() {
-        // No TUNADIVE_E2E_DRIVE env var in the test runner.
+        // No BOOTSAHI_E2E_DRIVE env var in the test runner.
         XCTAssertFalse(E2EDrive.isEnabled)
     }
 }

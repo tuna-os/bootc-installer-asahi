@@ -111,12 +111,12 @@ find_or_clone ASAHI_INSTALLER_DIR "${ASAHI_INSTALLER_DIR:-}" \
 	-- https://github.com/hanthor/asahi-installer.git --branch json-machine-mode
 
 # ── 1. D1 selftest (protocol/exit-code contract) ─────────────────────────
-section "D1: tuna-dive-agent selftest"
-if [ -n "$BOOTC_DIR" ] && [ -x "$BOOTC_DIR/components/tuna-dive-agent/test-agent.sh" ]; then
-	if bash "$BOOTC_DIR/components/tuna-dive-agent/test-agent.sh" >/tmp/tuna-dive-agent-selftest.log 2>&1; then
-		pass "test-agent.sh (log: /tmp/tuna-dive-agent-selftest.log)"
+section "D1: bootsahi-agent selftest"
+if [ -n "$BOOTC_DIR" ] && [ -x "$BOOTC_DIR/components/bootsahi-agent/test-agent.sh" ]; then
+	if bash "$BOOTC_DIR/components/bootsahi-agent/test-agent.sh" >/tmp/bootsahi-agent-selftest.log 2>&1; then
+		pass "test-agent.sh (log: /tmp/bootsahi-agent-selftest.log)"
 	else
-		fail "test-agent.sh — see /tmp/tuna-dive-agent-selftest.log"
+		fail "test-agent.sh — see /tmp/bootsahi-agent-selftest.log"
 	fi
 else
 	skip "test-agent.sh not found"
@@ -124,35 +124,35 @@ fi
 
 # ── 2. D3: does the SwiftUI app build and test? ───────────────────────────
 section "D3: swift build / swift test"
-TUNADIVE_DIR="${BOOTC_DIR:+$BOOTC_DIR/macos-app/TunaDive}"
-if [ -n "$TUNADIVE_DIR" ] && [ -f "$TUNADIVE_DIR/Package.swift" ]; then
-	if (cd "$TUNADIVE_DIR" && swift build >/tmp/tunadive-build.log 2>&1); then
-		pass "swift build (log: /tmp/tunadive-build.log)"
+BOOTSAHI_DIR="${BOOTC_DIR:+$BOOTC_DIR/macos-app/Bootsahi}"
+if [ -n "$BOOTSAHI_DIR" ] && [ -f "$BOOTSAHI_DIR/Package.swift" ]; then
+	if (cd "$BOOTSAHI_DIR" && swift build >/tmp/bootsahi-build.log 2>&1); then
+		pass "swift build (log: /tmp/bootsahi-build.log)"
 	else
-		fail "swift build — see /tmp/tunadive-build.log"
+		fail "swift build — see /tmp/bootsahi-build.log"
 	fi
-	if (cd "$TUNADIVE_DIR" && swift test >/tmp/tunadive-test.log 2>&1); then
-		pass "swift test (log: /tmp/tunadive-test.log)"
+	if (cd "$BOOTSAHI_DIR" && swift test >/tmp/bootsahi-test.log 2>&1); then
+		pass "swift test (log: /tmp/bootsahi-test.log)"
 	else
-		fail "swift test — see /tmp/tunadive-test.log"
+		fail "swift test — see /tmp/bootsahi-test.log"
 	fi
 else
-	skip "Package.swift not found under $TUNADIVE_DIR"
+	skip "Package.swift not found under $BOOTSAHI_DIR"
 fi
 
 # ── 2b. D3: does the app actually launch? (checklist step 1) ─────────────
 section "D3: does the app launch (not just compile)?"
-if [ -n "$TUNADIVE_DIR" ] && [ -f "$TUNADIVE_DIR/Package.swift" ]; then
-	(cd "$TUNADIVE_DIR" && swift run >/tmp/tunadive-run.log 2>&1 &
-	 echo $! >/tmp/tunadive-run.pid)
+if [ -n "$BOOTSAHI_DIR" ] && [ -f "$BOOTSAHI_DIR/Package.swift" ]; then
+	(cd "$BOOTSAHI_DIR" && swift run >/tmp/bootsahi-run.log 2>&1 &
+	 echo $! >/tmp/bootsahi-run.pid)
 	sleep 8
-	RUNPID=$(cat /tmp/tunadive-run.pid 2>/dev/null || echo "")
+	RUNPID=$(cat /tmp/bootsahi-run.pid 2>/dev/null || echo "")
 	if [ -n "$RUNPID" ] && kill -0 "$RUNPID" 2>/dev/null; then
-		pass "app process still running 8s after launch (log: /tmp/tunadive-run.log)"
+		pass "app process still running 8s after launch (log: /tmp/bootsahi-run.log)"
 		kill "$RUNPID" 2>/dev/null
 		wait "$RUNPID" 2>/dev/null
 	else
-		fail "app process exited within 8s — see /tmp/tunadive-run.log"
+		fail "app process exited within 8s — see /tmp/bootsahi-run.log"
 	fi
 else
 	skip "Package.swift not found"

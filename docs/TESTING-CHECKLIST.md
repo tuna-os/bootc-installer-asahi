@@ -10,16 +10,16 @@ cheapest/lowest-risk first — each step should pass before moving to the next.
 
 ## 1. D3 app — does it even launch?
 Already CI-verified to compile/link/test on a GitHub macos-14 runner
-([`tuna-dive-app-build.yml`](../.github/workflows/tuna-dive-app-build.yml),
+([`bootsahi-app-build.yml`](../.github/workflows/bootsahi-app-build.yml),
 run [30102272271](https://github.com/tuna-os/bootc-installer-asahi/actions/runs/30102272271):
 `swift build` clean, 8/8 tests pass, zero warnings). Not yet proven to
 actually run.
 
 ```sh
-cd macos-app/TunaDive
+cd macos-app/Bootsahi
 swift run
 ```
-Expect: a window titled "Tuna Dive" showing the welcome screen. This is the
+Expect: a window titled "Bootsahi" showing the welcome screen. This is the
 very first real-hardware milestone — if it doesn't get this far, nothing
 downstream matters yet.
 
@@ -45,7 +45,7 @@ view shows the same messages/asks step 2 produced manually, and that
 clicking through actually sends working answers back.
 
 ## 4. The real gap: install-config.json handoff
-Per `macos-app/TunaDive/README.md`'s biggest open TODO — there is no
+Per `macos-app/Bootsahi/README.md`'s biggest open TODO — there is no
 defined contract yet for how `install-config.json` gets written onto the
 ESP after the backend's `do_install()` finishes creating partitions. Before
 attempting a real disk-touching install:
@@ -56,14 +56,14 @@ This is a design conversation, not just a bug fix — flag it explicitly
 rather than guessing at it under time pressure with a real disk on the line.
 
 ## 5. D1 agent — dry run only, not on real hardware yet
-`components/tuna-dive-agent/tuna-dive-agent.sh` is CI-tested
+`components/bootsahi-agent/bootsahi-agent.sh` is CI-tested
 (`test-agent.sh`, 8 assertions, all green) against `/bin/true`/`/bin/false`
 stand-ins for fisherman — never against a real `fisherman` binary or a real
 disk. Before trusting it on the M1 Air:
 ```sh
-TUNA_DIVE_CONFIG_PATH=/path/to/a/real/install-config.json \
-TUNA_DIVE_NO_REBOOT=1 \
-./components/tuna-dive-agent/tuna-dive-agent.sh
+BOOTSAHI_CONFIG_PATH=/path/to/a/real/install-config.json \
+BOOTSAHI_NO_REBOOT=1 \
+./components/bootsahi-agent/bootsahi-agent.sh
 ```
 with a real `fisherman` binary on `$PATH` pointed at a scratch loop device
 or VM disk — **not** the machine's real disk — to prove the `customMounts`
@@ -71,7 +71,7 @@ or VM disk — **not** the machine's real disk — to prove the `customMounts`
 binary from **`projectbluefin/fisherman`**, not `tuna-os/fisherman` — the
 former is what wootc actually vendors and has real fixes (explicit
 `mount -t`, `chroot`-based `useradd`) the latter lacks as of this writing;
-see [tuna-dive-agent#6](https://github.com/tuna-os/bootc-installer-asahi/issues/6)
+see [issue #6](https://github.com/tuna-os/bootc-installer-asahi/issues/6)
 for the full comparison.
 
 ## 6. Only after 1-5 pass: an actual bootc-Asahi install attempt

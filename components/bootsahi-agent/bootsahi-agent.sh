@@ -192,6 +192,19 @@ main() {
     # what actually matters; overwriting is the bonus when shred exists.
     shred -u "$RECIPE_FILE" 2>/dev/null || rm -f "$RECIPE_FILE" || true
 
+    # Same reasoning, one layer up and worse: install-config.json can carry a
+    # LUKS passphrase and a Wi-Fi PSK, and unlike RUN_DIR the ESP is NOT tmpfs.
+    # It's vfat — no permission bits, world-readable by anything that can read
+    # the filesystem — and it stays mounted on the installed system forever.
+    # Leaving it there would publish the disk-encryption passphrase to every
+    # local user on the machine we just encrypted.
+    #
+    # Only after a successful install: on failure the interactive fisherman UI
+    # wants it. shred is best-effort here and largely theatre on vfat over
+    # wear-levelled flash — removal is the part that matters.
+    log "removing install-config.json (carries LUKS passphrase / Wi-Fi PSK; the ESP is world-readable and persists)"
+    shred -u "$cfg" 2>/dev/null || rm -f "$cfg" || true
+
     if [ "${BOOTSAHI_NO_REBOOT:-0}" != "1" ]; then
         log "rebooting into the installed system"
         systemctl reboot

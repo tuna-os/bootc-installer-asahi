@@ -133,6 +133,34 @@ Split by *who knows what, and when*:
 | `<ESP>/asahi/install-config.json` | macOS app → backend's `copy_idata` | after partitioning, by the existing `collect_installer_data()` hook | **intent only**: `targetImgref`, `user` (with `$6$` hash), `hostname`, `filesystem`, `encryption`, `wifi`, `cosign*`, `sshEnabled` |
 | `<ESP>/asahi/stub_info.json` (existing file, extra keys) | backend | same hook | **facts only the backend knows**: ESP and target-root **PARTUUIDs** |
 
+### Credential lifetime on the ESP (the channel is not a safe resting place)
+
+The channel table above says *where the file goes*; it also has to say *how
+long it lives*, because the ESP is a bad place to keep secrets:
+
+- It is **vfat** — no permission bits. Nothing can be `0o600` there, unlike
+  wootc's `vault.json`, which is `0o600` and ACL-restricted to
+  SYSTEM/Administrators on NTFS.
+- It is **not** tmpfs (unlike the agent's `RUN_DIR`), and it stays mounted
+  at `/boot/efi` on the installed system indefinitely.
+- The password travels as a `$6$` hash, which is the point of that
+  convention — but the **LUKS passphrase and Wi-Fi PSK cannot be hashed**,
+  because they have to be usable. They are necessarily plaintext-equivalent.
+
+Leaving the file in place would publish the disk-encryption passphrase, in
+the clear and world-readable, on the machine we just encrypted. So the
+contract is: **the agent removes `install-config.json` on a successful
+install**, in the same place it already shreds `recipe.json` — and
+deliberately *preserves* it on failure, since the interactive fisherman UI
+it falls back to has nothing to retry from otherwise. Both directions are
+asserted by `test-agent.sh`.
+
+(`shred` is best-effort and largely theatre on vfat over wear-levelled
+flash; removal is the part that carries the weight. Worth noting rather than
+pretending otherwise.)
+
+### The app writes no device fields at all
+
 So: **the app writes no device fields at all.** `rootPartition` and
 `espPartition` stop being app-supplied inputs and become values the agent
 resolves at runtime from `/dev/disk/by-partuuid/<uuid>`. They should leave
@@ -194,6 +222,15 @@ Options, for James to pick:
 
 A vs B is a real trade (one payload script change vs. a cleaner disk
 layout), and everything downstream of testing-checklist step 4 waits on it.
+
+**Until it is decided, the generated recipe is still unsafe to run against a
+real disk** — for a different reason than the ESP bug below. `build_recipe`
+emits the root mount as `{ partition: $c.rootPartition, target: "/", fstype:
+$c.filesystem }`, and under the current two-partition payload the only Linux
+partition *is* the one the agent is running from. fisherman would `mkfs` it
+mid-install. That is not deferred cleanup; it is a live hazard, and it is why
+the root mount is left untouched here rather than "fixed" to something
+plausible. The correct value is a function of which layout wins.
 
 ### Two live bugs found while writing this
 

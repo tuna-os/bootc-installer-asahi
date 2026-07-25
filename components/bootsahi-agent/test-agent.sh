@@ -89,10 +89,21 @@ if "$STUBS/fisherman-fail"; then
 fi
 
 run_agent() { # config_path fisherman_bin [extra_env...]
-	local cfg="$1" fbin="$2" rundir
+	local cfg="$1" fbin="$2" rundir usedcfg
 	rundir=$(mktemp -d -p "$WORK")
+	# Hand the agent a per-run COPY of the config, never the shared fixture.
+	# The agent deletes install-config.json on success (it carries the LUKS
+	# passphrase and lives on a world-readable vfat ESP), so passing the fixture
+	# directly would let the first success-path test delete a file the later
+	# tests still need — a self-inflicted ordering dependency.
+	usedcfg="$rundir/install-config.json"
+	if [ -f "$cfg" ]; then
+		cp "$cfg" "$usedcfg"
+	else
+		usedcfg="$cfg" # nonexistent-on-purpose, for the "no config" case
+	fi
 	set +e
-	env BOOTSAHI_RUN_DIR="$rundir" BOOTSAHI_NO_REBOOT=1 BOOTSAHI_CONFIG_PATH="$cfg" \
+	env BOOTSAHI_RUN_DIR="$rundir" BOOTSAHI_NO_REBOOT=1 BOOTSAHI_CONFIG_PATH="$usedcfg" \
 		BOOTSAHI_FISHERMAN_BIN="$fbin" "${@:3}" bash "$AGENT" >"$rundir/stdout" 2>&1
 	echo $? >"$rundir/exit"
 	set -e
@@ -127,6 +138,7 @@ echo "==> success path (fisherman succeeds)"
 r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-ok")
 check_exit "exit code" 0 "$r"
 check "recipe.json shredded after success" "" "$(ls "$r/recipe.json" 2>/dev/null || true)"
+check "install-config.json removed after success" "" "$(ls "$r/install-config.json" 2>/dev/null || true)"
 # The agent reports an unexecutable fisherman and a fisherman that ran and
 # returned nonzero identically (both "install failed", exit 1). Assert the
 # stub was actually EXECUTED, so a future path/permission regression can't
@@ -208,6 +220,10 @@ check_exit "exit code (missing field)" 1 "$r"
 echo "==> fisherman itself fails"
 r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-fail")
 check_exit "exit code (fisherman failure)" 1 "$r"
+# The complement of the deletion above: on failure the config must SURVIVE, or
+# the interactive fisherman UI we fall back to has nothing to retry from.
+check "install-config.json preserved after failure" "$r/install-config.json" \
+	"$(ls "$r/install-config.json" 2>/dev/null || true)"
 
 echo "==> cosignIdentity set but cosign not installed"
 r=$(run_agent "$WORK/cosign.json" "$STUBS/fisherman-ok")

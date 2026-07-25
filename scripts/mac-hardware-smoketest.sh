@@ -2,8 +2,9 @@
 # mac-hardware-smoketest.sh — first real-hardware pass, per docs/TESTING-CHECKLIST.md.
 #
 # Covers checklist steps 0-2 (prerequisites, does the D3 app build/launch,
-# one real D2 ask/answer round trip) plus D1's own selftest. Does NOT touch
-# any disk and does NOT attempt an actual install — steps 3-6 in the
+# one real D2 ask/answer round trip, and the terminal result contract from
+# issue #25) plus D1's own selftest. Does NOT touch any disk, does NOT
+# partition anything, and does NOT attempt an actual install — steps 3-6 in the
 # checklist (D3 driving D2 for real, the install-config.json handoff design
 # gap, D1 against a scratch disk, a real install) are deliberately not
 # automated here: they need a human decision or a disk you're willing to
@@ -258,17 +259,52 @@ proc.stdin.flush()
 # One more line proves the round trip: the installer moved past the ask.
 import select
 ready, _, _ = select.select([proc.stdout], [], [], 10)
-proc.terminate()
-if ready:
-    print("ROUND_TRIP_OK")
-else:
+if not ready:
+    proc.terminate()
     print("NO_FOLLOWUP_AFTER_ANSWER")
+    sys.exit(1)
+
+# Now verify the terminal result contract (issue #25). Closing stdin makes the
+# next ask hit EOF, which must produce a structured failure result AND a
+# non-zero exit -- NOT the exit 0 with no event that let a failed install send
+# the user off to bless and reboot. Deliberately closing stdin rather than
+# SIGTERM-ing: a signal kills the interpreter before the handler can report.
+proc.stdin.close()
+result = None
+try:
+    for line in proc.stdout:
+        try:
+            ev = json.loads(line.strip())
+        except json.JSONDecodeError:
+            continue
+        if ev.get("event") == "result":
+            result = ev
+            break
+except Exception:
+    pass
+try:
+    code = proc.wait(timeout=20)
+except subprocess.TimeoutExpired:
+    proc.kill()
+    print("BACKEND_DID_NOT_EXIT")
+    sys.exit(1)
+
+if result is None:
+    print(f"NO_RESULT_EVENT (exit {code})")
+    sys.exit(1)
+if result.get("status") != "failure":
+    print(f"UNEXPECTED_RESULT_STATUS {result.get('status')!r}")
+    sys.exit(1)
+if code == 0:
+    print("RESULT_FAILURE_BUT_EXIT_ZERO")
+    sys.exit(1)
+print("ROUND_TRIP_OK")
 PYEOF
 )
 	if [ "$RESULT" = "ROUND_TRIP_OK" ]; then
-		pass "ask -> answer -> follow-up round trip"
+		pass "ask -> answer -> follow-up round trip, then a structured failure result + non-zero exit (#25)"
 	else
-		fail "round trip did not complete (got: ${RESULT:-<nothing>})"
+		fail "D2 protocol check failed (got: ${RESULT:-<nothing>})"
 	fi
 else
 	skip "src/main.py not found under $ASAHI_INSTALLER_DIR"

@@ -22,6 +22,30 @@ check() { # description expected actual
 	fi
 }
 
+# dump_agent_output prints the agent's own stdout + install.log for a run
+# directory. Without this a failure only tells you the exit code was wrong,
+# not WHERE the agent stopped — and the EXIT trap deletes $WORK, so the
+# evidence is gone before you can look. Bit me diagnosing a macOS-only
+# failure; same lesson as dakota's error-lines truncation.
+dump_agent_output() { # rundir label
+	echo "  ---- $2: agent stdout ----"
+	sed 's/^/  | /' "$1/stdout" 2>/dev/null || echo "  | (no stdout captured)"
+	echo "  ---- $2: install.log ----"
+	sed 's/^/  | /' "$1/install.log" 2>/dev/null || echo "  | (no install.log written)"
+	echo "  ---- $2: files in rundir ----"
+	ls -la "$1" 2>/dev/null | sed 's/^/  | /'
+	echo "  --------------------------------"
+}
+
+# check_exit wraps check() and dumps diagnostics when the exit code is wrong.
+check_exit() { # description expected rundir
+	local actual
+	actual="$(cat "$3/exit")"
+	check "$1" "$2" "$actual"
+	[ "$2" != "$actual" ] && dump_agent_output "$3" "$1"
+	return 0
+}
+
 run_agent() { # config_path fisherman_bin [extra_env...]
 	local cfg="$1" fbin="$2" rundir
 	rundir=$(mktemp -d -p "$WORK")
@@ -59,7 +83,7 @@ EOF
 
 echo "==> success path (fisherman succeeds)"
 r=$(run_agent "$WORK/good.json" /bin/true)
-check "exit code" 0 "$(cat "$r/exit")"
+check_exit "exit code" 0 "$r"
 check "recipe.json shredded after success" "" "$(ls "$r/recipe.json" 2>/dev/null || true)"
 
 echo "==> recipe.json shape (fisherman=cat, inspect via install.log)"
@@ -72,23 +96,23 @@ grep -q '"imageType": "bootc"' "$r/install.log" || { echo "FAIL: recipe missing 
 
 echo "==> no install-config.json present"
 r=$(run_agent "$WORK/does-not-exist.json" /bin/true)
-check "exit code (no config -> fall through to interactive UI)" 2 "$(cat "$r/exit")"
+check_exit "exit code (no config -> fall through to interactive UI)" 2 "$r"
 
 echo "==> install-config.json missing a required field"
 r=$(run_agent "$WORK/missing-field.json" /bin/true)
-check "exit code (missing field)" 1 "$(cat "$r/exit")"
+check_exit "exit code (missing field)" 1 "$r"
 
 echo "==> fisherman itself fails"
 r=$(run_agent "$WORK/good.json" /bin/false)
-check "exit code (fisherman failure)" 1 "$(cat "$r/exit")"
+check_exit "exit code (fisherman failure)" 1 "$r"
 
 echo "==> cosignIdentity set but cosign not installed"
 r=$(run_agent "$WORK/cosign.json" /bin/true)
-check "exit code (cosign required, binary absent)" 1 "$(cat "$r/exit")"
+check_exit "exit code (cosign required, binary absent)" 1 "$r"
 
 echo "==> BOOTSAHI_SKIP_VERIFY escape hatch"
 r=$(run_agent "$WORK/cosign.json" /bin/true BOOTSAHI_SKIP_VERIFY=1)
-check "exit code (skip-verify escape hatch)" 0 "$(cat "$r/exit")"
+check_exit "exit code (skip-verify escape hatch)" 0 "$r"
 
 if [ "$fail" -ne 0 ]; then
 	echo "SELFTEST FAILED"

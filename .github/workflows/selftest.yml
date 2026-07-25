@@ -44,5 +44,23 @@ jobs:
       # destructive risk lives on the Linux side.
       - name: Install disk-test dependencies
         run: sudo apt-get install -y gdisk
-      - name: bootsahi-agent disk selftest (PARTUUID resolution on a real GPT disk)
-        run: sudo ./components/bootsahi-agent/test-agent-disk.sh
+      # Build the EXACT fisherman the bootstrap image ships, so the disk test can
+      # run fisherman's own `validate` against the recipe we generate. Every
+      # other assertion about that recipe is our opinion of what fisherman
+      # accepts — which is precisely how the `vfat` defect survived: it looked
+      # right to us and was never shown to the real consumer.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Build the pinned fisherman
+        run: |
+          # Keep in sync with scripts/build-bootstrap-image.sh's FISHERMAN_REV.
+          REV=d12b6cb2c1d3100971b1f4d24d7c2bc97a0d362c
+          git clone --quiet https://github.com/projectbluefin/fisherman /tmp/fisherman-src
+          git -C /tmp/fisherman-src checkout --quiet "$REV"
+          (cd /tmp/fisherman-src/fisherman && CGO_ENABLED=0 go build -trimpath -o /tmp/fisherman ./cmd/fisherman)
+          /tmp/fisherman version || true
+      - name: bootsahi-agent disk selftest (PARTUUID resolution + real fisherman validate)
+        env:
+          FISHERMAN_VALIDATE_BIN: /tmp/fisherman
+        run: sudo -E ./components/bootsahi-agent/test-agent-disk.sh

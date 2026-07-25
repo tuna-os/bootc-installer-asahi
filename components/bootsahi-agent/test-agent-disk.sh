@@ -175,6 +175,50 @@ else
 	fail=1
 fi
 
+# ── 1b. The real consumer's own validator (issue #26) ───────────────────────
+# Every assertion above is OUR opinion of what fisherman accepts. That is
+# exactly how the `vfat` bug survived: the recipe looked right to us and was
+# never shown to fisherman, which rejects "vfat" (it knows "fat32") only once
+# it reaches formatPartition — mid-install, after partitioning.
+#
+# So run fisherman's own `validate` against the recipe the agent actually
+# produced. Non-destructive: validate parses and checks, it does not mutate.
+echo
+echo "==> the REAL fisherman validates the generated recipe"
+FISHERMAN_VALIDATE_BIN="${FISHERMAN_VALIDATE_BIN:-$(command -v fisherman 2>/dev/null || true)}"
+if [ -z "$FISHERMAN_VALIDATE_BIN" ] || [ ! -x "$FISHERMAN_VALIDATE_BIN" ]; then
+	echo "  SKIP no fisherman binary available."
+	echo "       This is the assertion that would have caught the vfat bug, so its"
+	echo "       absence is worth noticing rather than passing over silently."
+	echo "       Set FISHERMAN_VALIDATE_BIN=/path/to/fisherman to enable."
+elif [ ! -f "$WORK/recipe-captured.json" ]; then
+	echo "FAIL: no recipe was captured to validate"
+	fail=1
+else
+	if out=$("$FISHERMAN_VALIDATE_BIN" validate "$WORK/recipe-captured.json" 2>&1); then
+		echo "ok: fisherman validate accepted the generated recipe"
+		echo "    ($("$FISHERMAN_VALIDATE_BIN" version 2>/dev/null | head -1))"
+	else
+		echo "FAIL: fisherman REJECTED the recipe this agent generates"
+		echo "$out" | sed 's/^/      | /'
+		fail=1
+	fi
+
+	# And prove the validator is actually discriminating, not rubber-stamping:
+	# feed it the exact defect that shipped. If this passes, the check above
+	# proves nothing.
+	sed 's/"fstype": "unformatted"/"fstype": "vfat"/' "$WORK/recipe-captured.json" \
+		>"$WORK/recipe-vfat.json"
+	if "$FISHERMAN_VALIDATE_BIN" validate "$WORK/recipe-vfat.json" >/dev/null 2>&1; then
+		echo "  note: this fisherman ACCEPTS fstype=vfat at validate time — it will"
+		echo "        fail later in formatPartition instead. Fixed by"
+		echo "        projectbluefin/fisherman#12; until that lands, our own"
+		echo "        fstype assertions in test-agent.sh are the only gate."
+	else
+		echo "ok: fisherman rejects the vfat defect at validate time (#12 is in)"
+	fi
+fi
+
 # ── 2. Refusals ─────────────────────────────────────────────────────────────
 echo
 echo "==> refuses when the recorded target is the ACTIVE root"

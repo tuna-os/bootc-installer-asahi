@@ -56,7 +56,14 @@ view shows the same messages/asks step 2 produced manually, and that
 clicking through actually sends working answers back.
 
 ## 4. The real gap: install-config.json handoff
-**Now designed** — see the "handoff" section of
+**Delivery mechanism designed; partition layout still undecided — and the
+recipe is NOT yet safe to run against a real disk.** Under the current
+two-partition payload, the only Linux partition is the one the agent runs
+from, and fisherman would `mkfs` it mid-install. Do not attempt steps 5-6
+until the A/B decision below is made and `build_recipe`'s root mount is
+updated to match.
+
+See the "handoff" section of
 [`docs/UNIFIED-INSTALL-CONTRACT.md`](UNIFIED-INSTALL-CONTRACT.md), written
 against the RFC in [issue #6](https://github.com/tuna-os/bootc-installer-asahi/issues/6).
 Summary of the answers:

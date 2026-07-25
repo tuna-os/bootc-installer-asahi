@@ -223,8 +223,20 @@ Options, for James to pick:
 A vs B is a real trade (one payload script change vs. a cleaner disk
 layout), and everything downstream of testing-checklist step 4 waits on it.
 
-**Until it is decided, the generated recipe is still unsafe to run against a
-real disk** — for a different reason than the ESP bug below. `build_recipe`
+**Decided: option A** — see [ADR 0001](adr/0001-bootstrap-partition-layout.md).
+The payload now emits three partitions.
+
+The generated recipe is still not *correct* — `build_recipe` emits
+`rootPartition` verbatim, and nothing resolves it to the installer-created
+target yet (that is #22). But since ADR 0001 the disk carries two Linux
+partitions, which made a wrong value *plausible* rather than obviously bogus,
+so the agent now positively refuses the catastrophic ones: a `rootPartition`
+or `espPartition` that resolves to the device backing `/`, or the two being
+the same device. Compared by `major:minor` via `/proc/self/mountinfo`, so
+`/dev/nvme0n1p5` and `/dev/disk/by-partuuid/...` aren't mistaken for different
+devices.
+
+The original hazard, for the record: `build_recipe`
 emits the root mount as `{ partition: $c.rootPartition, target: "/", fstype:
 $c.filesystem }`, and under the current two-partition payload the only Linux
 partition *is* the one the agent is running from. fisherman would `mkfs` it

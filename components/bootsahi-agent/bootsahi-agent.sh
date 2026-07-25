@@ -45,11 +45,19 @@ find_install_config() {
         [ -f "$BOOTSAHI_CONFIG_PATH" ] && echo "$BOOTSAHI_CONFIG_PATH"
         return 0
     fi
+    # <ESP>/asahi/ is checked first and is the intended production location:
+    # asahi-installer already creates that directory and copies files into it
+    # via copy_installer_data/collect_installer_data, AFTER partitioning — so
+    # delivering install-config.json needs no new mechanism, just an entry in
+    # the backend's copy_idata list. See docs/UNIFIED-INSTALL-CONTRACT.md.
+    # <ESP>/bootsahi/ stays supported for hand-placed files and dev/test.
     for c in /boot/efi /efi /boot; do
-        if [ -f "$c/bootsahi/install-config.json" ]; then
-            echo "$c/bootsahi/install-config.json"
-            return 0
-        fi
+        for d in asahi bootsahi; do
+            if [ -f "$c/$d/install-config.json" ]; then
+                echo "$c/$d/install-config.json"
+                return 0
+            fi
+        done
     done
     return 0
 }
@@ -100,7 +108,26 @@ build_recipe() {
         '
         {
             customMounts: [
-                { partition: $c.espPartition, target: "/boot/efi", fstype: "vfat" },
+                # The ESP fstype MUST be "unformatted". Two reasons, both load-bearing:
+                #
+                # 1. "vfat" (what this said before) is not a token fisherman
+                #    accepts at all. recipe.Validate() does not check fstype for
+                #    customMounts, so it passes validation and then dies inside
+                #    disk.formatPartition() — whose switch knows "fat32", not
+                #    "vfat" — with `unsupported filesystem: "vfat"`. This recipe
+                #    has therefore never been valid; it fails at fisherman step 1.
+                #
+                # 2. The obvious fix — "fat32" — is the dangerous one. Any token
+                #    other than "unformatted"/"" makes ApplyCustomLayout run mkfs
+                #    on the partition, and by the time this agent runs, the ESP
+                #    already holds m1n1/boot.bin, the bootloader, stub_info.json,
+                #    and vendorfw/ — Apple firmware extracted on-device, which we
+                #    are not permitted to redistribute and therefore cannot get
+                #    back. mkfs.fat on the ESP means a DFU restore.
+                #
+                # "unformatted" skips only the mkfs; the mount and the efiPart
+                # bookkeeping fisherman needs for the boot entry both still happen.
+                { partition: $c.espPartition, target: "/boot/efi", fstype: "unformatted" },
                 { partition: $c.rootPartition, target: "/", fstype: $c.filesystem }
             ],
             image: $c.targetImgref,

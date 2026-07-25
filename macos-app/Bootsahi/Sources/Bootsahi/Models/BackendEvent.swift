@@ -40,9 +40,35 @@ struct BackendAsk: Decodable {
     }
 }
 
+/// Terminal status from the backend's single `result` event.
+enum ResultStatus: String, Codable {
+    case success
+    case failure
+    /// The user left the installer flow cleanly without installing. Exits 0,
+    /// so it is indistinguishable from success by exit code alone — which is
+    /// exactly why this event exists.
+    case aborted
+}
+
+/// The one terminal event per backend run. See json-mode.md: a driver must
+/// require BOTH `status == .success` and a clean exit, and must treat the
+/// absence of this event as failure rather than as "still running".
+struct BackendResult: Decodable {
+    let status: ResultStatus
+    let reason: String?
+    /// `process`, `exception`, `interrupted`, or `internal`; failures only.
+    let kind: String?
+    let vgid: String?
+    /// GPT PARTUUID of the ESP the backend created. The only place this is
+    /// knowable, and what the first-boot agent needs to identify the ESP
+    /// without a device node (macOS: disk0sN, Linux: nvme0n1pN).
+    let efiPartUuid: String?
+}
+
 enum BackendEvent: Decodable {
     case message(BackendMessage)
     case ask(BackendAsk)
+    case result(BackendResult)
 
     private enum RootKeys: String, CodingKey { case event }
 
@@ -54,6 +80,8 @@ enum BackendEvent: Decodable {
             self = .message(try BackendMessage(from: decoder))
         case "ask":
             self = .ask(try BackendAsk(from: decoder))
+        case "result":
+            self = .result(try BackendResult(from: decoder))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .event, in: container,

@@ -1,0 +1,87 @@
+name: Build bootsahi bootstrap image
+
+# Issue #27: nothing in this repo built an image containing bootsahi-agent, so
+# every payload CI produced could boot but could not install. This builds the
+# real bootstrap and publishes it for the payload job to consume.
+#
+# arm64 runner because the image is aarch64 and fisherman is compiled natively
+# for it — no qemu-user emulation in the build path.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_image:
+        description: "Base image to derive the bootstrap from"
+        default: "ghcr.io/tuna-os/bonito:gnome-asahi"
+        type: string
+      tag:
+        description: "Tag to publish"
+        default: "ghcr.io/tuna-os/bootsahi-bootstrap:latest"
+        type: string
+      push:
+        description: "Push to GHCR (off = build and verify only)"
+        default: false
+        type: boolean
+  push:
+    branches: [main]
+    paths:
+      - "bootstrap-image/**"
+      - "scripts/build-bootstrap-image.sh"
+      - "components/**"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Login to GHCR
+        run: echo "${{ github.token }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build bootstrap image
+        env:
+          BASE_IMAGE: ${{ inputs.base_image || 'ghcr.io/tuna-os/bonito:gnome-asahi' }}
+        run: ./scripts/build-bootstrap-image.sh "${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}"
+
+      # Verify the contract INSIDE the image before publishing, so a broken
+      # bootstrap never becomes a payload. Cheaper and clearer than discovering
+      # it later from a payload verifier's mounted rootfs.
+      - name: Verify the bootstrap contract
+        run: |
+          TAG="${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}"
+          fail=0
+          check() { # description test-command...
+            if podman run --rm --entrypoint /bin/sh "$TAG" -c "$2" >/dev/null 2>&1; then
+              echo "  ok   $1"
+            else
+              echo "  FAIL $1"; fail=1
+            fi
+          }
+          check "bootsahi-agent executable"   '[ -x /usr/libexec/bootsahi-agent ]'
+          check "asahi-bootbin-sync present"  '[ -x /usr/libexec/asahi-bootbin-sync ]'
+          check "agent unit enabled"          '[ -L /etc/systemd/system/multi-user.target.wants/bootsahi-agent.service ] || [ -L /usr/lib/systemd/system/multi-user.target.wants/bootsahi-agent.service ]'
+          check "fisherman"                   'command -v fisherman'
+          check "jq"                          'command -v jq'
+          check "cosign"                      'command -v cosign'
+          check "nmcli"                       'command -v nmcli'
+          check "blkid"                       'command -v blkid'
+          check "bootstrap-release marker"    '[ -f /usr/share/bootsahi/bootstrap-release ]'
+          # The agent's own selftest, run against the agent AS SHIPPED rather
+          # than against the copy in the repo — the whole point is to catch a
+          # staging or permissions mistake that only exists inside the image.
+          echo "  -- agent selftest inside the image --"
+          podman run --rm -v "$PWD/components/bootsahi-agent:/t:ro" --entrypoint /bin/bash "$TAG" \
+            -c 'cp /t/test-agent.sh /tmp/ && sed -i "s#\$HERE/bootsahi-agent.sh#/usr/libexec/bootsahi-agent#" /tmp/test-agent.sh && bash /tmp/test-agent.sh' || fail=1
+          [ "$fail" -eq 0 ]
+
+      - name: Push
+        if: ${{ inputs.push }}
+        run: podman push "${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}"

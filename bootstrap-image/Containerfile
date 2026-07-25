@@ -1,0 +1,49 @@
+# bootsahi bootstrap image — the thing that actually boots on the Mac and runs
+# the first-boot agent.
+#
+# Until now the payload pipeline repackaged a stock desktop image, so the
+# artifact CI produced contained no bootsahi-agent, no unit, no fisherman and no
+# cosign: "the payload boots" was true and "the bootstrap handoff works" was
+# never tested at all (issue #27).
+#
+# BASE_IMAGE is a build arg on purpose. tuna-os publishes no minimal asahi tag
+# today (only bonito:gnome-asahi{,-testing}), so this currently derives from a
+# full GNOME image — far larger than the ~1.5 GB DESIGN.md wants. Dakota-asahi
+# is the destination; when a minimal asahi base exists, swapping this arg is the
+# whole change, which is why nothing below assumes anything about the base
+# beyond "asahi-capable bootc image with dnf".
+ARG BASE_IMAGE=ghcr.io/tuna-os/bonito:gnome-asahi
+FROM ${BASE_IMAGE}
+
+# fisherman is built from source in CI and staged next to this file, rather than
+# fetched at image-build time: issue #26 requires the payload to pin the EXACT
+# fisherman revision it was tested against. A curl|install of a floating release
+# would make "which fisherman did we test?" unanswerable after the fact.
+ARG FISHERMAN_REVISION=unknown
+COPY fisherman /usr/bin/fisherman
+
+# Tools the agent shells out to. jq parses install-config.json/stub_info.json;
+# cosign verifies the target image BEFORE deploying it; util-linux/gdisk provide
+# blkid and partition handling; NetworkManager provides nmcli for the Wi-Fi
+# handoff. Missing any of these turns into a first-boot failure on hardware,
+# which is the most expensive place to discover a missing package.
+RUN dnf install -y jq util-linux gdisk NetworkManager && \
+    dnf clean all
+
+COPY bootsahi-agent /usr/libexec/bootsahi-agent
+COPY asahi-bootbin-sync /usr/libexec/asahi-bootbin-sync
+COPY bootsahi-agent.service /usr/lib/systemd/system/bootsahi-agent.service
+COPY asahi-bootbin-sync.service /usr/lib/systemd/system/asahi-bootbin-sync.service
+COPY install-config.schema.json /usr/share/bootsahi/install-config.schema.json
+
+RUN chmod 0755 /usr/libexec/bootsahi-agent /usr/libexec/asahi-bootbin-sync /usr/bin/fisherman && \
+    systemctl enable bootsahi-agent.service asahi-bootbin-sync.service
+
+# A marker the payload verifier keys on, so a payload built from a stock desktop
+# image cannot be mistaken for a bootstrap. Records the pinned fisherman
+# revision for the same reason it is pinned at all.
+RUN mkdir -p /usr/share/bootsahi && \
+    printf 'name=bootsahi-bootstrap\nfisherman_revision=%s\n' "${FISHERMAN_REVISION}" \
+      > /usr/share/bootsahi/bootstrap-release
+
+RUN bootc container lint || true

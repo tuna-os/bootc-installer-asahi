@@ -31,6 +31,10 @@ final class InstallFlowViewModel: ObservableObject {
     @Published private(set) var step: Step = .welcome
     @Published private(set) var log: [BackendMessage] = []
     @Published private(set) var pendingAsk: BackendAsk?
+    /// The backend's terminal result, if it sent one. nil after a run means the
+    /// backend died without reporting — which must be read as failure, never as
+    /// success. See json-mode.md's terminal-result section.
+    @Published private(set) var backendResult: BackendResult?
     @Published var catalog: Catalog?
     @Published var selectedEntry: CatalogEntry?
     @Published var config = InstallConfig(
@@ -115,11 +119,7 @@ final class InstallFlowViewModel: ObservableObject {
         }
         proc.onTerminate = { [weak self] code in
             guard let self else { return }
-            if code == 0 {
-                self.step = .recoveryWalkthrough
-            } else {
-                self.step = .failed("installer backend exited with status \(code)")
-            }
+            self.step = Self.terminalStep(exitCode: code, result: self.backendResult)
         }
         process = proc
         step = .installing
@@ -144,12 +144,55 @@ final class InstallFlowViewModel: ObservableObject {
         step = .done
     }
 
+    /// Decides the terminal step from BOTH the exit code and the backend's
+    /// result event. Requiring both is the whole point, not belt-and-braces:
+    ///
+    /// - Exit code alone missed the original bug. The backend caught every
+    ///   exception, printed advice, and fell through to exit 0, so a failed
+    ///   install looked finished and this app sent the user off to bless and
+    ///   reboot an incomplete system.
+    /// - A success result alone would miss a crash after the backend reported
+    ///   success.
+    /// - `aborted` exits 0 by design (the user left the flow cleanly), so it is
+    ///   indistinguishable from success by exit code.
+    /// - No result at all must be failure, not "probably fine": a SIGKILLed
+    ///   backend emits nothing.
+    ///
+    /// Advancing to `.recoveryWalkthrough` is the consequential branch — it
+    /// tells the user to bless and reboot — so it is the one that must be
+    /// hardest to reach.
+    /// Pure so it is directly testable: `backendResult` is `private(set)`, so a
+    /// test cannot drive an instance-state version of this without a back door.
+    /// `nonisolated` because it is pure: it touches no MainActor state, and the
+    /// enclosing class is `@MainActor`, which would otherwise isolate this static
+    /// method and make it unusable from a plain XCTestCase.
+    nonisolated static func terminalStep(exitCode: Int32, result: BackendResult?) -> Step {
+        switch result?.status {
+        case .success where exitCode == 0:
+            return .recoveryWalkthrough
+        case .success:
+            return .failed("installer reported success but exited with status \(exitCode); "
+                           + "not advancing to the recoveryOS step")
+        case .failure:
+            let reason = result?.reason ?? "no reason given"
+            return .failed("installer failed: \(reason)")
+        case .aborted:
+            let reason = result?.reason ?? "installer exited without installing"
+            return .failed("installation did not complete: \(reason)")
+        case nil:
+            return .failed("installer backend exited with status \(exitCode) "
+                           + "without reporting a result; treating as failure")
+        }
+    }
+
     private func handle(_ event: BackendEvent) {
         switch event {
         case .message(let msg):
             log.append(msg)
         case .ask(let ask):
             pendingAsk = ask
+        case .result(let result):
+            backendResult = result
         }
         reportE2EState()
     }

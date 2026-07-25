@@ -4,7 +4,13 @@
   "title": "install-config.json",
   "description": "Written by the Bootsahi macOS app onto the ESP (<ESP>/bootsahi/install-config.json) after the user completes the wizard. Consumed once, at first boot, by bootsahi-agent, which never re-reads it after a successful install.",
   "type": "object",
-  "required": ["targetImgref", "rootPartition", "espPartition", "filesystem", "hostname"],
+  "required": [
+    "targetImgref",
+    "rootPartition",
+    "espPartition",
+    "filesystem",
+    "hostname"
+  ],
   "properties": {
     "targetImgref": {
       "type": "string",
@@ -12,47 +18,75 @@
     },
     "rootPartition": {
       "type": "string",
-      "description": "Block device for the root filesystem, already created by the asahi-installer backend (e.g. /dev/nvme0n1p5)."
+      "description": "Block device for the root filesystem (e.g. /dev/nvme0n1p5). PROVISIONAL: per docs/UNIFIED-INSTALL-CONTRACT.md this field is slated to become a dev/test override rather than an app-supplied input. The macOS app cannot produce a correct value even in principle -- it knows the partition as 'disk0s5', while the agent sees 'nvme0n1p5' -- so the agent should resolve the target at runtime from a PARTUUID recorded by the backend. Still required today because how it resolves depends on an unsettled partition-layout decision (see that doc's 'fisherman formats /' section)."
     },
     "espPartition": {
       "type": "string",
-      "description": "Block device for the EFI system partition shared with recoveryOS/m1n1 (e.g. /dev/nvme0n1p1)."
+      "description": "Block device for the EFI system partition shared with recoveryOS/m1n1 (e.g. /dev/nvme0n1p1). Same PROVISIONAL status as rootPartition. Note the agent always emits this mount with fstype 'unformatted': the ESP already holds m1n1/boot.bin and the non-redistributable on-device-extracted vendorfw/, so it must never be reformatted."
     },
     "filesystem": {
       "type": "string",
-      "enum": ["xfs", "ext4", "btrfs"],
+      "enum": [
+        "xfs",
+        "ext4",
+        "btrfs"
+      ],
       "description": "Filesystem to format rootPartition with. zfs is not offered here (fisherman's zfs path assumes whole-disk auto-partitioning, not a pre-made partition)."
     },
-    "hostname": { "type": "string" },
+    "hostname": {
+      "type": "string"
+    },
     "encryption": {
       "type": "object",
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["none", "luks-passphrase", "tpm2-luks", "tpm2-luks-passphrase"]
+          "enum": [
+            "none",
+            "luks-passphrase",
+            "tpm2-luks",
+            "tpm2-luks-passphrase"
+          ]
         },
-        "passphrase": { "type": "string" }
+        "passphrase": {
+          "type": "string"
+        }
       }
     },
     "user": {
       "type": "object",
       "properties": {
-        "username": { "type": "string" },
-        "fullname": { "type": "string" },
+        "username": {
+          "type": "string"
+        },
+        "fullname": {
+          "type": "string"
+        },
         "password": {
           "type": "string",
-          "description": "Should be a $6$ SHA-512-crypt hash, not plaintext — matches wootc's vault.json convention (hashed in the macOS app before this file is ever written to disk). fisherman's chpasswd step (projectbluefin/fisherman only — see issue #6) auto-detects a $-prefixed value here and passes chpasswd -e so the hash is stored verbatim rather than re-hashed; a plain string is also accepted (chpasswd hashes it normally) but means the password sat in this file in the clear until the install completed."
+          "description": "Should be a $6$ SHA-512-crypt hash, not plaintext \u2014 matches wootc's vault.json convention (hashed in the macOS app before this file is ever written to disk). fisherman's chpasswd step (projectbluefin/fisherman only \u2014 see issue #6) auto-detects a $-prefixed value here and passes chpasswd -e so the hash is stored verbatim rather than re-hashed; a plain string is also accepted (chpasswd hashes it normally) but means the password sat in this file in the clear until the install completed."
         },
-        "groups": { "type": "array", "items": { "type": "string" } }
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "wifi": {
       "type": "object",
-      "description": "Read from the current macOS network by the app (SSID only, per DESIGN.md — never the password); the user re-enters the passphrase on the Mac side and it is written here in the clear for one-shot consumption on tmpfs.",
+      "description": "Read from the current macOS network by the app (SSID only, per DESIGN.md \u2014 never the password); the user re-enters the passphrase on the Mac side and it is written here in the clear for one-shot consumption on tmpfs.",
       "properties": {
-        "ssid": { "type": "string" },
-        "psk": { "type": "string" }
+        "ssid": {
+          "type": "string"
+        },
+        "psk": {
+          "type": "string"
+        }
       }
     },
     "sshEnabled": {

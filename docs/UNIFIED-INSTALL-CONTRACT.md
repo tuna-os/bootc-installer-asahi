@@ -82,6 +82,154 @@ updated to point at `projectbluefin/fisherman` accordingly. This should be
 fixed before any real-disk testing, not after — these are exactly the kind
 of failures that only show up once you're not on a mocked stdin.
 
+## The handoff: how install-config.json reaches the ESP
+
+*(Added after reading fisherman and asahi-installer source. This is
+testing-checklist step 4, the item blocking every real-disk step. It also
+corrects the section above — see "Correcting my own §1 recommendation".)*
+
+### The question
+
+`install-config.json` carries `rootPartition` and `espPartition`. The macOS
+app cannot know those until the backend has partitioned the disk, and the
+backend partitions the disk during the install run. So: who writes the file,
+where, when, and what identifies the partitions?
+
+### Option "backend hands device nodes back" is not merely awkward — it is impossible
+
+The app runs on macOS, where the partitions it just created are named
+`disk0s5`. The agent runs on Linux, where the same partition is
+`nvme0n1p5`. **A device node learned on macOS is meaningless to the agent**,
+so no amount of plumbing device nodes back to the app produces a usable
+value. This isn't a preference between two workable designs; it eliminates
+one of them.
+
+### Both channels this needs already exist upstream
+
+1. **A post-partition write hook.** `installer_data.json`'s EFI partition
+   entry already sets `copy_installer_data: true`, which makes
+   `osinstall.py:169` register `<ESP>/asahi/` as a target, and
+   `main.py:596` calls `collect_installer_data()` over those targets —
+   **after** `osins.install()` has created and mounted the partitions. Files
+   are copied from `stub.py`'s `copy_idata` list, and `stub_info.json` and
+   `installer.log` are written there too. Adding `install-config.json` is an
+   append to that list, not a new mechanism.
+2. **A partition identifier that crosses OS boundaries.** Every
+   `diskutil.py` partition object carries its GPT UUID
+   (`uuid=partinfo["DiskUUID"]`, `diskutil.py:134`), and asahi-installer
+   *already* threads the ESP's into the boot chain:
+   `chosen.asahi,efi-system-partition=<uuid>` and
+   `chainload=<uuid>;<next_object>` (`osinstall.py:189-192`). It even prints
+   it to the user as "EFI PARTUUID" (`main.py:731`). **PARTUUID is already
+   this stack's identity currency** — stable across macOS/Linux and immune
+   to partition renumbering.
+
+### Proposed contract
+
+Split by *who knows what, and when*:
+
+| Channel | Written by | When | Contents |
+|---|---|---|---|
+| `<ESP>/asahi/install-config.json` | macOS app → backend's `copy_idata` | after partitioning, by the existing `collect_installer_data()` hook | **intent only**: `targetImgref`, `user` (with `$6$` hash), `hostname`, `filesystem`, `encryption`, `wifi`, `cosign*`, `sshEnabled` |
+| `<ESP>/asahi/stub_info.json` (existing file, extra keys) | backend | same hook | **facts only the backend knows**: ESP and target-root **PARTUUIDs** |
+
+So: **the app writes no device fields at all.** `rootPartition` and
+`espPartition` stop being app-supplied inputs and become values the agent
+resolves at runtime from `/dev/disk/by-partuuid/<uuid>`. They should leave
+`required` in the schema and be retained only as an explicit dev/test
+override (which is exactly how `test-agent.sh` uses them today).
+
+### Correcting my own §1 recommendation
+
+The section above concluded "Asahi doesn't need wootc's split" because
+Asahi has no pre-mount phase forcing config onto the kernel cmdline. That
+reasoning was right about the **file** and wrong about the **boundary**.
+
+wootc's split is not primarily an early-mount hack — it is a *separation of
+knowledge*: the host app writes what it knows before touching the disk, and
+the runtime resolves what only the runtime can know. Asahi needs that same
+boundary for exactly the reason wootc needed it, even though Asahi can keep
+one file on one channel. Recommendation stands (single JSON file, converge
+on field shapes and the `$6$` convention); the correction is that the
+device-identity fields belong on the runtime side of the line, not in the
+app's file.
+
+### The blocking constraint: fisherman formats `/`
+
+Reading `tuna-os/fisherman` turned up something that has to be settled
+before any of the above can be implemented. `disk.ApplyCustomLayout()`
+(`internal/disk/custom.go:61`) runs `mkfs` on every custom mount whose
+fstype isn't `unformatted`/`""` — including `/`. Three things currently
+believed simultaneously cannot all be true:
+
+- `DESIGN.md`: a ~1.5 GB bootstrap root boots and runs the agent.
+- `scripts/make-payload.sh`: the payload declares exactly **two**
+  partitions — `EFI` and `Root` (`expand: true`). One Linux partition.
+- fisherman: formats the partition it installs `/` onto.
+
+**You cannot mkfs the filesystem you are running from.** And this is not
+just a layout tidiness question — **LUKS forces it**. Encrypting the root
+means reformatting it as a LUKS container, which is impossible in place, so
+encryption cannot work at all under the current single-partition layout,
+whatever else changes.
+
+Options, for James to pick:
+
+- **A — three partitions.** ESP + a small fixed-size bootstrap root + the
+  target root (`expand: true`). The agent installs into the target root and
+  the bootstrap partition is reclaimed afterward (or kept deliberately as a
+  rescue system). This is the direct wootc analog: bootstrap root = Phase 2,
+  target root = Phase 3 native-disk graduation. Needs only a
+  `make-payload.sh` change, and the agent resolves "the Linux partition that
+  isn't the one I'm running from" — or better, reads the target's PARTUUID
+  from the backend per the table above.
+- **B — bootstrap runs from RAM.** Boot the bootstrap as a
+  squashfs/initramfs live root, leaving the single Linux partition free to
+  be formatted. Cleaner on disk and keeps the two-partition layout, but
+  needs a live-root dracut path built new on this side.
+- **~~C — `bootc install to-existing-root`~~** (install in place, no
+  reformat). Discarded: it bypasses fisherman's formatting entirely, and so
+  gives up the shared-installer-brain premise that RFC §1 exists to serve —
+  and still cannot do LUKS.
+
+A vs B is a real trade (one payload script change vs. a cleaner disk
+layout), and everything downstream of testing-checklist step 4 waits on it.
+
+### Two live bugs found while writing this
+
+Both in the recipe `bootsahi-agent` generates, both invisible to the
+selftest as it stood, both fixed in the same PR as this document:
+
+1. **The ESP mount specified `fstype: "vfat"`, which fisherman does not
+   accept.** `recipe.Validate()` doesn't check `customMounts` fstypes
+   (`internal/recipe/recipe.go:148-166`), so it passes validation and then
+   fatals inside `formatPartition()` — whose switch knows `fat32`, not
+   `vfat`. **This recipe has never been valid**; it would have died at
+   fisherman step 1 on the first real run.
+2. **The obvious fix is the dangerous one.** Changing it to `fat32` makes
+   `ApplyCustomLayout` run `mkfs.fat -F32` on an ESP that by then holds
+   `m1n1/boot.bin`, the bootloader, `stub_info.json`, and `vendorfw/` — the
+   Apple firmware extracted on-device, which is not redistributable and
+   therefore cannot be restored from anywhere. That is a DFU-restore-grade
+   mistake. The correct value is **`unformatted`**, which skips only the
+   `mkfs`; the mount and the `efiPart` bookkeeping fisherman needs for the
+   boot entry both still happen (`custom.go:68-86`).
+
+The selftest now asserts every `customMounts` fstype is in
+`formatPartition`'s accepted set, and separately that the ESP's is a
+skip-format token. Both assertions were verified to fire against the old
+`vfat` value. The gap that let this through is worth naming: the previous
+shape checks grepped that a `/boot/efi` mount *existed*, never what it
+would *do*.
+
+### Also confirms RFC §5's `MountType` landmine, with a line number
+
+`custom.go:85` is `runner.Run("mount", s.Partition, hostTarget)` — no
+`-t`. That is precisely the missing-explicit-type bug §5 describes, live in
+`tuna-os/fisherman` today, and already fixed in
+`projectbluefin/fisherman`. It strengthens the existing recommendation to
+build from the projectbluefin fork.
+
 ## One correction to issue #6 §5
 
 The RFC lists the clevis/dracut-omit landmine under "already fixed for you"

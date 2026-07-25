@@ -56,15 +56,28 @@ view shows the same messages/asks step 2 produced manually, and that
 clicking through actually sends working answers back.
 
 ## 4. The real gap: install-config.json handoff
-Per `macos-app/Bootsahi/README.md`'s biggest open TODO — there is no
-defined contract yet for how `install-config.json` gets written onto the
-ESP after the backend's `do_install()` finishes creating partitions. Before
-attempting a real disk-touching install:
-- Decide where in `do_install()` (or a subsequent step) this should happen.
-- Decide what partition device info the app needs back from the backend to
-  fill in `rootPartition`/`espPartition` in `install-config.json`.
-This is a design conversation, not just a bug fix — flag it explicitly
-rather than guessing at it under time pressure with a real disk on the line.
+**Now designed** — see the "handoff" section of
+[`docs/UNIFIED-INSTALL-CONTRACT.md`](UNIFIED-INSTALL-CONTRACT.md), written
+against the RFC in [issue #6](https://github.com/tuna-os/bootc-installer-asahi/issues/6).
+Summary of the answers:
+- **Where/when:** `<ESP>/asahi/install-config.json`, delivered through
+  asahi-installer's existing `copy_installer_data` →
+  `collect_installer_data()` hook, which already runs after partitioning.
+  No new mechanism needed.
+- **What identifies the partitions:** PARTUUIDs, resolved by the agent at
+  runtime. The app supplies **no device fields at all** — it knows the
+  partition as `disk0s5` while the agent sees `nvme0n1p5`, so an
+  app-supplied device node cannot be correct even in principle.
+
+**One decision still blocks this step (and 5-6 behind it):** fisherman
+formats the partition it installs `/` onto, so the bootstrap cannot run
+from the target root — but `make-payload.sh` declares only two partitions
+(ESP + Root). LUKS makes this unavoidable rather than cosmetic: you cannot
+reformat the filesystem you are running from, so encryption is impossible
+under the current layout. Pick **A** (three partitions: ESP + small
+bootstrap root + expanding target root, the direct wootc Phase-2/Phase-3
+analog) or **B** (bootstrap runs from RAM as a live squashfs root). Details
+and the discarded option C are in that doc.
 
 ## 5. D1 agent — dry run only, not on real hardware yet
 `components/bootsahi-agent/bootsahi-agent.sh` is CI-tested

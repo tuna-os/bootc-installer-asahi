@@ -63,9 +63,11 @@ mkdir -p "$STUBS"
 
 printf '#!/bin/sh\nexit 0\n' >"$STUBS/fisherman-ok"
 printf '#!/bin/sh\nexit 1\n' >"$STUBS/fisherman-fail"
-# Echoes the recipe it was handed into the agent's log, so the shape
-# assertions below can inspect what build_recipe actually produced.
-printf '#!/bin/sh\ncat "$1"\n' >"$STUBS/fisherman-dump"
+# Echoes the recipe it was handed into the agent's log, AND keeps a verbatim
+# copy the assertions can run jq over. The copy is needed because install.log
+# interleaves the JSON with the agent's own log lines, and because the agent
+# shreds recipe.json itself on success.
+printf '#!/bin/sh\ncat "$1"\ncp "$1" "$(dirname "$1")/recipe-captured.json"\n' >"$STUBS/fisherman-dump"
 chmod +x "$STUBS"/fisherman-*
 
 # Sanity-check the stubs by RUNNING them, not with `[ -x ]`. The whole bug
@@ -151,6 +153,48 @@ if [ "$shape_fail" -eq 0 ]; then
 else
 	dump_agent_output "$r" "recipe.json shape"
 	fail=1
+fi
+
+# ── fstype tokens must be ones fisherman actually accepts ────────────────
+# The grep-for-substrings assertions above are why a bogus fstype survived: they
+# checked that a /boot/efi mount EXISTED, never what it would DO. fisherman's
+# recipe.Validate() doesn't check customMounts fstypes either, so an unknown
+# token isn't caught until disk.formatPartition() fatals at install step 1 —
+# on real hardware, after the disk has already been repartitioned.
+#
+# Accepted set is disk.formatPartition()'s switch plus the two skip-format
+# sentinels. Keep in sync with internal/disk/custom.go.
+CAPTURED="$r/recipe-captured.json"
+if [ ! -f "$CAPTURED" ]; then
+	echo "FAIL: fisherman-dump did not capture a recipe to inspect"
+	fail=1
+else
+	bad=$(jq -r '
+		["fat32","ext4","ext3","xfs","btrfs","unformatted","swap",""] as $ok
+		| .customMounts[]
+		| select((.fstype // "") as $f | $ok | index($f) | not)
+		| "\(.target)=\(.fstype)"
+	' "$CAPTURED")
+	if [ -n "$bad" ]; then
+		echo "FAIL: fstype not accepted by fisherman's formatPartition: $bad"
+		fail=1
+	else
+		echo "ok: all customMounts fstypes are tokens fisherman accepts"
+	fi
+
+	# The ESP must never be reformatted: it already holds m1n1/boot.bin, the
+	# bootloader, and vendorfw/ — on-device-extracted Apple firmware that is not
+	# redistributable and cannot be recovered. Anything but a skip-format token
+	# here is a DFU-restore-grade bug, so assert it explicitly rather than
+	# relying on it being in the accepted set above.
+	esp_fstype=$(jq -r '.customMounts[] | select(.target == "/boot/efi") | .fstype' "$CAPTURED")
+	case "$esp_fstype" in
+	unformatted | "") echo "ok: ESP is not reformatted (fstype=${esp_fstype:-<empty>})" ;;
+	*)
+		echo "FAIL: ESP fstype is '$esp_fstype' — this runs mkfs on the ESP and destroys m1n1/boot.bin + vendorfw"
+		fail=1
+		;;
+	esac
 fi
 
 echo "==> no install-config.json present"

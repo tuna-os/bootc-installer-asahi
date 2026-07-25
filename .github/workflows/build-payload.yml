@@ -15,9 +15,13 @@ on:
         description: "Payload name"
         default: "tunaos-bootstrap"
         type: string
-      root_size_gb:
-        description: "Root partition size (GB) for the loopback install"
+      bootstrap_size_gb:
+        description: "Bootstrap partition size (GB) — the loopback disk root.img is built in, NOT the installed system's disk"
         default: "24"
+        type: string
+      target_min_gb:
+        description: "Minimum size (GB) of the expanding target partition the installed OS goes into"
+        default: "12"
         type: string
 
 permissions:
@@ -48,7 +52,9 @@ jobs:
           df -h /
 
       - name: Build payload
-        run: sudo -E ./scripts/make-payload.sh "${{ inputs.image }}" "${{ inputs.name }}" "${{ inputs.root_size_gb }}"
+        env:
+          TARGET_MIN_GB: ${{ inputs.target_min_gb }}
+        run: sudo -E ./scripts/make-payload.sh "${{ inputs.image }}" "${{ inputs.name }}" "${{ inputs.bootstrap_size_gb }}"
 
       - name: "Test: payload structure, boot chain, rootfs, installer_data"
         run: sudo ./scripts/test-payload.sh "out/${{ inputs.name }}.zip" out/installer_data.json

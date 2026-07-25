@@ -26,9 +26,14 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - name: Harness selftest (good payload passes, bad payload fails)
+      # jq is needed by BOTH steps below: selftest.sh's installer_data layout
+      # cases build their fixtures with it, and test-agent.sh drives the agent,
+      # which uses jq throughout. Installed up front rather than inside the
+      # second step, which is where it used to live — the first step would have
+      # failed on a missing jq before ever reaching the install.
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Harness selftest (payload structure + installer_data layout contract)
         run: sudo ./scripts/selftest.sh
       - name: bootsahi-agent selftest (install-config.json -> recipe.json contract)
-        run: |
-          sudo apt-get update && sudo apt-get install -y jq
-          ./components/bootsahi-agent/test-agent.sh
+        run: ./components/bootsahi-agent/test-agent.sh

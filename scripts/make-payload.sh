@@ -22,6 +22,18 @@ set -euo pipefail
 
 IMAGE="${1:?usage: make-payload.sh <bootc-image-ref> <payload-name> [root-size-gb]}"
 NAME="${2:?usage: make-payload.sh <bootc-image-ref> <payload-name> [root-size-gb]}"
+# Size of the loopback disk the bootstrap image is installed into, and therefore
+# of the fixed-size Bootstrap partition. This is NOT the installed system's disk
+# — that is the expanding "Root" partition, sized by TARGET_MIN_GB + user slack.
+#
+# The default stays 24 because the image we currently feed this is a full GNOME
+# desktop image, not a bootstrap (issue #27: nothing in this pipeline builds an
+# image containing bootsahi-agent yet). A real minimal bootstrap wants ~2-4 GB,
+# and this default should drop with it — but lowering it before that image
+# exists just buys an ENOSPC 40 minutes into an aarch64 build.
+#
+# Whatever this is, it becomes dead space on the installed machine until the
+# bootstrap partition is reclaimed (ADR 0001, follow-up).
 ROOT_GB="${3:-24}"
 OUT="${OUT_DIR:-out}"
 BASE_URL="${BASE_URL:-https://download.tunaos.org/asahi}"
@@ -98,6 +110,27 @@ ROOT_BYTES=$(blockdev --getsize64 "$ROOT_PART")
 dd if="$ROOT_PART" of="$WORK/root.img" bs=8M status=progress
 cleanup_loop
 
+# ── Three partitions, per docs/adr/0001-bootstrap-partition-layout.md ────────
+# The bootstrap must NOT boot from the partition fisherman is going to format:
+# disk.ApplyCustomLayout() runs mkfs on the mount it installs "/" onto, and you
+# cannot mkfs the filesystem containing PID 1. Previously there was one Linux
+# partition (Root, expand:true) serving as both, which could never have worked
+# (issue #19).
+#
+# So: "Bootstrap" is fixed-size and carries root.img; "Root" is a bare
+# %noformat% partition that absorbs the remaining space and is what the
+# first-boot agent installs into. asahi-installer needs no changes for this —
+# osinstall.py's partition_disk() iterates the template generically, and a
+# partition with neither "format" nor "image" is created and left untouched.
+#
+# TARGET_MIN_BYTES is the floor before "expand" adds the user's chosen slack.
+# It has to be big enough for the pulled image plus podman's working storage:
+# fisherman redirects podman's graphroot onto the target disk precisely because
+# the VFS driver's byte-for-byte layer copy OOM-kills small-memory machines
+# (internal/install/bootc.go). Undersizing this trades an OOM for an ENOSPC.
+TARGET_MIN_GB="${TARGET_MIN_GB:-12}"
+TARGET_MIN_BYTES=$((TARGET_MIN_GB * 1024 * 1024 * 1024))
+
 ESP_BYTES=$(du -sb "$WORK/esp" | cut -f1)
 # ESP partition needs headroom for vendor firmware the installer copies in.
 ESP_SIZE=$(( (ESP_BYTES / 1048576 + 500) ))MB
@@ -128,11 +161,16 @@ cat > "$OUT/installer_data.json" <<EOF
           "source": "esp"
         },
         {
-          "name": "Root",
+          "name": "Bootstrap",
           "type": "Linux",
           "size": "${ROOT_BYTES}B",
-          "expand": true,
           "image": "root.img"
+        },
+        {
+          "name": "Root",
+          "type": "Linux",
+          "size": "${TARGET_MIN_BYTES}B",
+          "expand": true
         }
       ]
     }

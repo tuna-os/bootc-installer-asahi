@@ -143,9 +143,59 @@ build_recipe() {
         ' >"$RECIPE_FILE"
 }
 
+# Authoritative Apple Silicon check, mirroring asahi-bootbin-sync.sh. The unit's
+# ConditionPathExists only proves we're on *some* device-tree machine; this
+# proves it's Apple. Defence in depth, and the reason it exists in the script
+# rather than only the unit: issue #23 was a unit-level predicate that silently
+# never matched, which no amount of script correctness would have caught.
+# Exits 2 (nothing to do), never 0 — 0 means "installed, go ahead and reboot".
+check_apple_hardware() {
+    [ "${BOOTSAHI_SKIP_HW_CHECK:-0}" = "1" ] && return 0
+    if ! grep -q "apple," /proc/device-tree/compatible 2>/dev/null; then
+        log "not Apple Silicon hardware (no 'apple,' in /proc/device-tree/compatible); nothing to do"
+        exit 2
+    fi
+    return 0
+}
+
+# fisherman's manual/customMounts path does NOT do LUKS: luksFormat/luksOpen
+# happen only in its auto-partition branch, and TPM enrolment needs an
+# activeRootPart that manual mode leaves empty. Since this agent always sets
+# customMounts, an encrypted install would silently complete UNENCRYPTED while
+# the app's UI said otherwise — a security-boundary failure, not a missing
+# feature (issue #20). Fail closed BEFORE any disk mutation until fisherman's
+# manual path implements encryption.
+reject_unsupported_encryption() {
+    local cfg="$1" etype
+    etype=$(jq -r '.encryption.type // "none"' "$cfg")
+    if [ "$etype" != "none" ]; then
+        log "encryption.type='$etype' requested, but fisherman's customMounts path does not apply LUKS"
+        log "refusing to continue: an install would silently complete UNENCRYPTED (see issue #20)"
+        return 1
+    fi
+    return 0
+}
+
 main() {
+    # 0700 so the recipe (LUKS passphrase, Wi-Fi PSK) and log are not readable by
+    # other local users under a permissive umask; umask 077 covers files created
+    # by redirection below, which does not honour any mode argument (issue #21).
+    umask 077
+    # umask 077 above already makes mkdir create this 0700; the explicit chmod
+    # covers the case where RUN_DIR already exists from an earlier boot/run.
+    # (No -m on mkdir: with -p it applies only to the deepest directory, which
+    # is a subtle enough footgun that shellcheck flags it — SC2174.)
     mkdir -p "$RUN_DIR"
+    chmod 0700 "$RUN_DIR" 2>/dev/null || true
     : >"$LOG_FILE"
+
+    # Remove the derived recipe on EVERY exit path, not just the success path.
+    # Previously a fisherman failure exited before the cleanup below, leaving a
+    # file containing the LUKS passphrase and Wi-Fi PSK on disk while the
+    # fallback UI kept running indefinitely (issue #21).
+    trap 'shred -u "$RECIPE_FILE" 2>/dev/null || rm -f "$RECIPE_FILE" 2>/dev/null || true' EXIT
+
+    check_apple_hardware
 
     local cfg
     cfg=$(find_install_config)
@@ -168,6 +218,11 @@ main() {
             exit 1
         fi
     done
+
+    # Before any network use or disk mutation: refuse configs we cannot honour.
+    if ! reject_unsupported_encryption "$cfg"; then
+        exit 1
+    fi
 
     connect_wifi "$cfg"
 

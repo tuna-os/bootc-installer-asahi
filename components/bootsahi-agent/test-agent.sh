@@ -103,7 +103,12 @@ run_agent() { # config_path fisherman_bin [extra_env...]
 		usedcfg="$cfg" # nonexistent-on-purpose, for the "no config" case
 	fi
 	set +e
+	# BOOTSAHI_SKIP_HW_CHECK: CI and macOS are not Apple Silicon Linux boxes, so
+	# the agent's /proc/device-tree/compatible guard would exit 2 everywhere.
+	# Tests that WANT the guard active pass BOOTSAHI_SKIP_HW_CHECK=0 as extra
+	# env — a later duplicate assignment wins in env(1), verified.
 	env BOOTSAHI_RUN_DIR="$rundir" BOOTSAHI_NO_REBOOT=1 BOOTSAHI_CONFIG_PATH="$usedcfg" \
+		BOOTSAHI_SKIP_HW_CHECK=1 \
 		BOOTSAHI_FISHERMAN_BIN="$fbin" "${@:3}" bash "$AGENT" >"$rundir/stdout" 2>&1
 	echo $? >"$rundir/exit"
 	set -e
@@ -131,6 +136,15 @@ cat >"$WORK/cosign.json" <<'EOF'
   "targetImgref": "x", "rootPartition": "/dev/null", "espPartition": "/dev/null",
   "filesystem": "btrfs", "hostname": "h",
   "cosignIdentity": "https://example.test/signer", "cosignIssuer": "https://example.test/oidc"
+}
+EOF
+
+cat >"$WORK/encrypted.json" <<'EOF'
+{
+  "targetImgref": "ghcr.io/tuna-os/bonito:gnome-asahi",
+  "rootPartition": "/dev/null", "espPartition": "/dev/null",
+  "filesystem": "btrfs", "hostname": "h",
+  "encryption": {"type": "tpm2-luks", "passphrase": "hunter2"}
 }
 EOF
 
@@ -232,6 +246,26 @@ check_exit "exit code (cosign required, binary absent)" 1 "$r"
 echo "==> BOOTSAHI_SKIP_VERIFY escape hatch"
 r=$(run_agent "$WORK/cosign.json" "$STUBS/fisherman-ok" BOOTSAHI_SKIP_VERIFY=1)
 check_exit "exit code (skip-verify escape hatch)" 0 "$r"
+
+echo "==> encryption requested (fisherman's manual path cannot do LUKS -> must fail closed)"
+r=$(run_agent "$WORK/encrypted.json" "$STUBS/fisherman-ok")
+check_exit "exit code (encryption unsupported -> fail closed)" 1 "$r"
+# The whole point is that it refuses BEFORE touching a disk: fisherman must
+# never have been invoked, so no recipe should have been handed to it.
+check "no recipe generated for a rejected encrypted config" "" \
+	"$(ls "$r/recipe-captured.json" 2>/dev/null || true)"
+
+echo "==> recipe removed even when fisherman FAILS (secrets must not linger)"
+r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-fail")
+check "recipe.json removed on the failure path too" "" "$(ls "$r/recipe.json" 2>/dev/null || true)"
+
+echo "==> non-Apple hardware guard (no skip override)"
+r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-ok" BOOTSAHI_SKIP_HW_CHECK=0)
+check_exit "exit code (not Apple Silicon -> nothing to do, NOT success)" 2 "$r"
+
+echo "==> run dir is not world-readable"
+r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-ok")
+check "run dir mode" "700" "$(stat -c '%a' "$r" 2>/dev/null || stat -f '%Lp' "$r" 2>/dev/null)"
 
 if [ "$fail" -ne 0 ]; then
 	echo "SELFTEST FAILED"

@@ -2,15 +2,22 @@
 Description=Sync m1n1 boot.bin with deployed boot components (Asahi/bootc)
 Documentation=https://github.com/tuna-os/bootc-installer-asahi
 # Apple Silicon only; needs the ESP mounted and the OS fully deployed.
-ConditionKernelVersion=asahi
+# See bootsahi-agent.service for why this is not ConditionKernelVersion=asahi
+# (issue #23): systemd implies a glob match, so a wildcard-less "asahi" never
+# matches a real kernel release and the unit was always skipped. The script's
+# own "apple," /proc/device-tree/compatible check is the real predicate.
+ConditionPathExists=/proc/device-tree/compatible
 After=local-fs.target boot-efi.mount
 RequiresMountsFor=/boot/efi
 
 [Service]
 Type=oneshot
 ExecStart=/usr/libexec/asahi-bootbin-sync
-# boot.bin writes must survive; don't let a mid-write kill corrupt the ESP.
-KillMode=none
+# KillMode=none is deprecated (systemd warns it is unsafe) and was guarding
+# against a mid-write kill corrupting boot.bin. The script already handles that
+# properly: it keeps boot.bin.bak, restores it if update-m1n1 fails, and
+# sync -f's the ESP. Rely on that rather than on an escape from systemd's
+# lifecycle management.
 TimeoutStartSec=120
 
 [Install]

@@ -1,8 +1,18 @@
 [Unit]
 Description=Bootsahi first-boot agent (install-config.json -> unattended bootc install)
 Documentation=https://github.com/tuna-os/bootc-installer-asahi
-# Apple Silicon only; same convention as asahi-bootbin-sync.service.
-ConditionKernelVersion=asahi
+# Apple Silicon only. NOT ConditionKernelVersion=asahi: systemd implies "$="
+# (shell-style glob) when no operator is given, so a wildcard-less "asahi"
+# matches only a kernel release literally EQUAL to "asahi" — never a real one
+# like 7.0.13-400.asahi.fc42.aarch64+16k. That silently skipped this unit on
+# every boot, so the agent has never run (issue #23). Kernel strings are the
+# wrong predicate anyway: Arch's linux-asahi reports KERNELRELEASE
+# "7.0.13-1-1-ARCH", with no "asahi" in it at all.
+#
+# This is a cheap non-DT-hardware skip; the authoritative "apple," check on
+# /proc/device-tree/compatible lives in the script, mirroring
+# asahi-bootbin-sync.sh.
+ConditionPathExists=/proc/device-tree/compatible
 After=network-online.target local-fs.target
 Wants=network-online.target
 # greetd's fisherman-driven interactive UI is the fallback: it must not race

@@ -125,18 +125,58 @@ for os_entry in oses:
         failures.append("package URL basename does not match the zip filename")
     parts = os_entry.get("partitions", [])
     esp = [p for p in parts if p.get("type") == "EFI"]
-    root = [p for p in parts if p.get("type") == "Linux"]
+    linux = [p for p in parts if p.get("type") == "Linux"]
+
     if not esp or not esp[0].get("copy_firmware") or esp[0].get("source") != "esp":
         failures.append("EFI partition must have source=esp and copy_firmware=true")
-    if not root or not root[0].get("expand"):
-        failures.append("root partition should be expandable")
-    if root and root[0].get("image") not in names:
-        failures.append(f"root image {root[0].get('image')} not inside the zip")
-    if root and root[0].get("image"):
-        declared = root[0].get("size", "0B")
-        actual = z.getinfo(root[0]["image"]).file_size
-        if declared != f"{actual}B":
-            failures.append(f"root size {declared} != actual image size {actual}B")
+    # install-config.json is delivered through this hook; without it the
+    # first-boot agent has nothing to read. See docs/UNIFIED-INSTALL-CONTRACT.md.
+    if esp and not esp[0].get("copy_installer_data"):
+        failures.append("EFI partition must have copy_installer_data=true "
+                        "(the install-config.json delivery channel)")
+
+    # Three-partition contract, per docs/adr/0001-bootstrap-partition-layout.md.
+    # Identified by ROLE, not by ordinal: this check previously assumed
+    # linux[0] was both the image-bearing and the expanding partition, which is
+    # exactly the producer-assumption-echoed-by-verifier problem in issue #27.
+    bootstrap = [p for p in linux if p.get("image")]
+    target = [p for p in linux if not p.get("image")]
+
+    if len(bootstrap) != 1:
+        failures.append(f"expected exactly 1 image-bearing bootstrap partition, got {len(bootstrap)}")
+    if len(target) != 1:
+        failures.append(f"expected exactly 1 image-less target partition, got {len(target)}")
+
+    if bootstrap:
+        b = bootstrap[0]
+        if b["image"] not in names:
+            failures.append(f"bootstrap image {b['image']} not inside the zip")
+        else:
+            declared, actual = b.get("size", "0B"), z.getinfo(b["image"]).file_size
+            if declared != f"{actual}B":
+                failures.append(f"bootstrap size {declared} != actual image size {actual}B")
+        # The bootstrap must be fixed-size. If it expanded, it would swallow the
+        # space the installed OS needs, and the target would be a sliver.
+        if b.get("expand"):
+            failures.append("bootstrap partition must NOT be expandable")
+
+    if target:
+        t = target[0]
+        if not t.get("expand"):
+            failures.append("target partition must be expandable (it holds the installed OS)")
+        # It must arrive raw: fisherman formats it, and the agent must be able to
+        # tell it apart from the partition it is itself running from. A format or
+        # image here collapses that distinction — see issue #19.
+        if t.get("format"):
+            failures.append("target partition must have no 'format' (fisherman formats it)")
+
+    # Belt-and-braces on the whole point of the layout: the partition carrying
+    # the bootstrap image can never also be the one that expands, because the
+    # bootstrap cannot mkfs the filesystem it is running from.
+    for p in linux:
+        if p.get("image") and p.get("expand"):
+            failures.append(f"partition {p.get('name')!r} both carries an image and expands — "
+                            "that is the single-partition layout issue #19 rejects")
 if failures:
     for f in failures:
         print(f"  FAIL installer_data: {f}")

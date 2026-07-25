@@ -47,6 +47,26 @@ check_tool() { # name, check-command...
 
 check_tool "Xcode Command Line Tools" xcode-select -p
 check_tool "swift" swift --version
+
+# xctest_framework_path echoes the XCTest.framework path under the ACTIVE
+# developer directory, or nothing. Always exits 0 — callers branch on whether
+# stdout is empty, not on status (this script runs with `set -u` and treating
+# "no Xcode" as an error would abort the remaining checks).
+xctest_framework_path() {
+	local devdir fw
+	devdir="$(xcode-select -p 2>/dev/null)" || return 0
+	[ -n "$devdir" ] || return 0
+	fw="$devdir/Platforms/MacOSX.platform/Developer/Library/Frameworks/XCTest.framework"
+	[ -d "$fw" ] && echo "$fw"
+	return 0
+}
+
+if [ -n "$(xctest_framework_path)" ]; then
+	pass "XCTest available (full Xcode) — swift test can run"
+else
+	skip "XCTest not available under $(xcode-select -p 2>/dev/null || echo '<no developer dir>') — swift test will be skipped (needs Xcode.app, not just CLT)"
+fi
+
 check_tool "python3" python3 --version
 check_tool "jq" jq --version
 
@@ -131,10 +151,25 @@ if [ -n "$BOOTSAHI_DIR" ] && [ -f "$BOOTSAHI_DIR/Package.swift" ]; then
 	else
 		fail "swift build — see /tmp/bootsahi-build.log"
 	fi
-	if (cd "$BOOTSAHI_DIR" && swift test >/tmp/bootsahi-test.log 2>&1); then
-		pass "swift test (log: /tmp/bootsahi-test.log)"
+	# `swift test` needs XCTest, which lives inside Xcode.app — NOT in the
+	# Command Line Tools. With CLT only, `swift build` succeeds and `swift test`
+	# dies with "no such module 'XCTest'". That's a host toolchain limitation,
+	# not a defect in the app, so report it as a SKIP with the actual remedy
+	# instead of a FAIL that sends you hunting through Swift source. (Cost me a
+	# round trip: CI's macos-14 runner has full Xcode and passes 15/15, so the
+	# failure looked Mac-specific and code-shaped when it was neither.)
+	if [ -n "$(xctest_framework_path)" ]; then
+		if (cd "$BOOTSAHI_DIR" && swift test >/tmp/bootsahi-test.log 2>&1); then
+			pass "swift test (log: /tmp/bootsahi-test.log)"
+		else
+			fail "swift test — see /tmp/bootsahi-test.log"
+		fi
 	else
-		fail "swift test — see /tmp/bootsahi-test.log"
+		skip "swift test — XCTest not available (Command Line Tools only, no Xcode.app).
+       swift build above still covers compile/link correctness, and the same
+       tests run green on CI's full-Xcode runner. To run them locally: install
+       Xcode.app, then
+         sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
 	fi
 else
 	skip "Package.swift not found under $BOOTSAHI_DIR"

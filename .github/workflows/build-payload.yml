@@ -8,9 +8,13 @@ on:
   workflow_dispatch:
     inputs:
       image:
-        description: "Asahi-capable bootc image ref"
-        default: "ghcr.io/tuna-os/bonito:gnome-asahi-testing"
+        description: "Image to package. Default is the bootsahi BOOTSTRAP — a stock desktop image boots but cannot install (issue #27)."
+        default: "ghcr.io/tuna-os/bootsahi-bootstrap:latest"
         type: string
+      require_bootstrap:
+        description: "Fail if the image is not a bootsahi bootstrap (no agent/unit/fisherman inside)"
+        default: true
+        type: boolean
       name:
         description: "Payload name"
         default: "tunaos-bootstrap"
@@ -57,7 +61,9 @@ jobs:
         run: sudo -E ./scripts/make-payload.sh "${{ inputs.image }}" "${{ inputs.name }}" "${{ inputs.bootstrap_size_gb }}"
 
       - name: "Test: payload structure, boot chain, rootfs, installer_data"
-        run: sudo ./scripts/test-payload.sh "out/${{ inputs.name }}.zip" out/installer_data.json
+        env:
+          REQUIRE_BOOTSTRAP: ${{ inputs.require_bootstrap && '1' || '0' }}
+        run: sudo -E ./scripts/test-payload.sh "out/${{ inputs.name }}.zip" out/installer_data.json
 
       - name: Install qemu + U-Boot firmware
         run: |

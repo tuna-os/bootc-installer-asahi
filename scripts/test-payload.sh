@@ -100,6 +100,61 @@ else
 	find "$R" -maxdepth 3 2>/dev/null | head -40 || true
 	df -h "$R" 2>/dev/null || true
 fi
+
+# ── 3b. Bootstrap contract (issue #27) ──────────────────────────────────────
+# "The payload boots" and "the bootstrap handoff works" are different claims.
+# Only the first was ever tested, because the payload was a stock desktop image
+# containing none of this. Uses $OSROOT, not $R: on a bootc/ostree image the
+# real rootfs is nested under a deployment path, and checking $R would report
+# everything missing.
+echo "== 3b. bootsahi bootstrap contract =="
+if [ -f "$OSROOT/usr/share/bootsahi/bootstrap-release" ]; then
+	ok "bootstrap-release marker present"
+	sed 's/^/       /' "$OSROOT/usr/share/bootsahi/bootstrap-release"
+
+	[ -x "$OSROOT/usr/libexec/bootsahi-agent" ] &&
+		ok "bootsahi-agent installed and executable" ||
+		bad "bootsahi-agent missing or not executable"
+	[ -x "$OSROOT/usr/libexec/asahi-bootbin-sync" ] &&
+		ok "asahi-bootbin-sync installed" || bad "asahi-bootbin-sync missing"
+	[ -f "$OSROOT/usr/lib/systemd/system/bootsahi-agent.service" ] &&
+		ok "agent unit shipped" || bad "agent unit missing"
+
+	# Shipped is not enabled. An unenabled unit is a silent no-op on first boot,
+	# and #23 was exactly that failure mode by a different mechanism, so assert
+	# the wants symlink itself rather than the unit file's presence.
+	if ls "$OSROOT"/etc/systemd/system/multi-user.target.wants/bootsahi-agent.service \
+	      "$OSROOT"/usr/lib/systemd/system/multi-user.target.wants/bootsahi-agent.service \
+	      >/dev/null 2>&1; then
+		ok "agent unit ENABLED (wants symlink present)"
+	else
+		bad "agent unit shipped but NOT enabled — it would never run on first boot"
+	fi
+
+	# Pin the #23 fix so it cannot silently regress in a rebuilt image.
+	if grep -q '^ConditionKernelVersion=asahi$' \
+	   "$OSROOT/usr/lib/systemd/system/bootsahi-agent.service" 2>/dev/null; then
+		bad "unit still carries literal ConditionKernelVersion=asahi (never matches — #23)"
+	else
+		ok "unit does not carry the never-matching kernel condition (#23)"
+	fi
+
+	for t in fisherman jq cosign nmcli blkid; do
+		if [ -x "$OSROOT/usr/bin/$t" ] || [ -x "$OSROOT/usr/sbin/$t" ]; then
+			ok "tool present: $t"
+		else
+			bad "tool MISSING from the bootstrap: $t (agent fails on first boot)"
+		fi
+	done
+else
+	echo "  SKIP no /usr/share/bootsahi/bootstrap-release — this payload is NOT a"
+	echo "       bootsahi bootstrap, just a repackaged image. It can boot; it"
+	echo "       cannot install. (issue #27; REQUIRE_BOOTSTRAP=1 makes this fatal)"
+	if [ "${REQUIRE_BOOTSTRAP:-0}" = "1" ]; then
+		bad "REQUIRE_BOOTSTRAP=1 but this payload has no bootstrap marker"
+	fi
+fi
+
 umount "$WORK/root"
 
 echo "== 4. installer_data.json consistency =="

@@ -13,11 +13,24 @@
 > | [#19](https://github.com/tuna-os/bootc-installer-asahi/issues/19) | D1 cannot format the root it runs from | **decided + implemented** ([ADR 0001](adr/0001-bootstrap-partition-layout.md)); real-fisherman run still open (#26) |
 > | [#20](https://github.com/tuna-os/bootc-installer-asahi/issues/20) | LUKS silently skipped in manual path | **fails closed** (#29); real support open |
 > | [#21](https://github.com/tuna-os/bootc-installer-asahi/issues/21) | Secrets persist on ESP; cleanup not failure-safe | **partly fixed** (#18, #29); one-shot secret channel open |
-> | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | **implemented**, covered by a real-GPT-disk test |
+> | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | **mostly** — see the caveat below |
 > | [#23](https://github.com/tuna-os/bootc-installer-asahi/issues/23) | Both units never started | **fixed** (#29) |
 > | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | open |
 > | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | open |
 > | [#27](https://github.com/tuna-os/bootc-installer-asahi/issues/27) | Payload contains no agent | open |
+>
+> **#22 caveat, so the table isn't read as more than it is.** Resolution by
+> PARTUUID + role is implemented and covered by a real-GPT-disk test (13
+> assertions, four refusal paths against real devices). But the issue also asks
+> to refuse "Apple/APFS/recovery partitions" and "unexpected GPT types", and
+> the agent does **not** check GPT types at all. It refuses by *provenance*
+> instead — the target must be one this install recorded a PARTUUID for, and
+> must sit on the same parent disk as our ESP. That is arguably stronger than a
+> type check (a type check would happily accept a Linux partition belonging to
+> someone else's install), but it is not what was asked, and the two are not
+> equivalent for a disk whose recorded identities are stale. Also: the
+> attached-second-disk case is covered by the parent-disk check but has **no
+> fixture** exercising it.
 >
 > Also open but outside the gate: [#25](https://github.com/tuna-os/bootc-installer-asahi/issues/25)
 > (backend exits 0 on failure, so the app can tell you to bless a failed

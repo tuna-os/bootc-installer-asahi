@@ -415,15 +415,34 @@ main() {
         if ! verify_target "$TARGET_DEV" "$ESP_DEV"; then
             exit 1
         fi
-    else
+    elif [ "${BOOTSAHI_ALLOW_CONFIG_DEVICES:-0}" = "1" ]; then
+        # Explicitly-enabled dev/test path only. It is gated behind an env var
+        # rather than merely warned about because the safety argument for it is
+        # UNVERIFIED: refuse_active_root screens the device backing /, which
+        # covers the bootstrap partition only if the bootstrap boots directly
+        # from it. Under an initramfs pivot or a composefs deployment, / may
+        # report something other than the bootstrap partition device — and then
+        # nothing stops fisherman being handed the bootstrap.
+        #
+        # We cannot test that today: no bootstrap image exists yet (issue #27),
+        # so no one has ever observed what / reports on a real bootsahi boot.
+        # An unverifiable assumption guarding an unrecoverable operation is not
+        # a safety property, so production must not be able to reach this path
+        # by accident — only by someone typing the variable.
         TARGET_DEV=$(jq -r '.rootPartition // empty' "$cfg")
         ESP_DEV=$(jq -r '.espPartition // empty' "$cfg")
         if [ -z "$TARGET_DEV" ] || [ -z "$ESP_DEV" ]; then
-            log "no stub_info.json and no rootPartition/espPartition in the config; cannot identify a target"
+            log "BOOTSAHI_ALLOW_CONFIG_DEVICES=1 but the config has no rootPartition/espPartition"
             exit 1
         fi
-        log "WARNING: no stub_info.json found; falling back to the config's device paths."
-        log "WARNING: this is a dev/test path — production installs must resolve by PARTUUID (issue #22)."
+        log "WARNING: BOOTSAHI_ALLOW_CONFIG_DEVICES=1 — using the config's device paths"
+        log "WARNING: dev/test only. Production installs resolve by PARTUUID (issue #22)."
+    else
+        log "no stub_info.json found at the expected location, so the install target cannot be"
+        log "identified by PARTUUID. Refusing rather than trusting the config's device paths:"
+        log "the app cannot know Linux device names, and this disk carries two Linux partitions."
+        log "(dev/test override: BOOTSAHI_ALLOW_CONFIG_DEVICES=1 — see issue #22)"
+        exit 1
     fi
 
     connect_wifi "$cfg"

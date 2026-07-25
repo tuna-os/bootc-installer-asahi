@@ -52,9 +52,9 @@ cat > "$G/installer_data.json" <<EOF
 "boot_object":"m1n1.bin","next_object":"m1n1/boot.bin",
 "package":"https://example.invalid/selftest-good.zip",
 "partitions":[
- {"name":"EFI","type":"EFI","size":"600MB","format":"fat","volume_id":"0x1","copy_firmware":true,"copy_installer_data":true,"source":"esp"},
- {"name":"Bootstrap","type":"Linux","size":"${ROOT_BYTES}B","image":"root.img"},
- {"name":"Root","type":"Linux","size":"12884901888B","expand":true}]}]}
+ {"name":"EFI","role":"esp","type":"EFI","size":"600MB","format":"fat","volume_id":"0x1","copy_firmware":true,"copy_installer_data":true,"source":"esp"},
+ {"name":"Bootstrap","role":"bootstrap","type":"Linux","size":"${ROOT_BYTES}B","image":"root.img"},
+ {"name":"Root","role":"target","type":"Linux","size":"12884901888B","expand":true}]}]}
 EOF
 
 echo "==> Building synthetic BAD payload..."
@@ -117,9 +117,9 @@ PYEOF
 # parameter expansion: building JSON by stripping trailing braces off strings is
 # unreadable and silently wrong the moment a field order changes.
 LAYOUT_BASE=$(cat <<EOF
-[{"name":"EFI","type":"EFI","size":"600MB","source":"esp","copy_firmware":true,"copy_installer_data":true},
- {"name":"Bootstrap","type":"Linux","size":"${ROOT_BYTES}B","image":"root.img"},
- {"name":"Root","type":"Linux","size":"12884901888B","expand":true}]
+[{"name":"EFI","role":"esp","type":"EFI","size":"600MB","source":"esp","copy_firmware":true,"copy_installer_data":true},
+ {"name":"Bootstrap","role":"bootstrap","type":"Linux","size":"${ROOT_BYTES}B","image":"root.img"},
+ {"name":"Root","role":"target","type":"Linux","size":"12884901888B","expand":true}]
 EOF
 )
 mutate() { jq -c "$1" <<<"$LAYOUT_BASE"; }
@@ -140,6 +140,10 @@ layout_case "two image-bearing partitions rejected" fail \
 	"$(mutate '. + [(.[1] + {name: "Bootstrap2"})]')" || layout_fail=1
 layout_case "bootstrap size not matching the image rejected" fail \
 	"$(mutate '.[1] += {size: "999B"}')" || layout_fail=1
+layout_case "missing role= keys rejected (agent could not resolve a target)" fail \
+	"$(mutate 'map(del(.role))')" || layout_fail=1
+layout_case "roles swapped between bootstrap and target rejected" fail \
+	"$(mutate '.[1].role = "target" | .[2].role = "bootstrap"')" || layout_fail=1
 
 [ "$layout_fail" -eq 0 ] || { echo "SELFTEST FAIL: installer_data layout contract"; exit 1; }
 

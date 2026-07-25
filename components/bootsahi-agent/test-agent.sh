@@ -109,6 +109,7 @@ run_agent() { # config_path fisherman_bin [extra_env...]
 	# env — a later duplicate assignment wins in env(1), verified.
 	env BOOTSAHI_RUN_DIR="$rundir" BOOTSAHI_NO_REBOOT=1 BOOTSAHI_CONFIG_PATH="$usedcfg" \
 		BOOTSAHI_SKIP_HW_CHECK=1 \
+		BOOTSAHI_ALLOW_CONFIG_DEVICES=1 \
 		BOOTSAHI_FISHERMAN_BIN="$fbin" "${@:3}" bash "$AGENT" >"$rundir/stdout" 2>&1
 	echo $? >"$rundir/exit"
 	set -e
@@ -299,6 +300,15 @@ echo "==> rootPartition == espPartition must be refused"
 jq '.espPartition = .rootPartition' "$WORK/good.json" >"$WORK/same-dev.json"
 r=$(run_agent "$WORK/same-dev.json" "$STUBS/fisherman-ok")
 check_exit "exit code (root == esp -> refuse)" 1 "$r"
+
+echo "==> without the dev override, config device paths must be REFUSED"
+# The whole suite runs with BOOTSAHI_ALLOW_CONFIG_DEVICES=1 because it has no
+# stub_info.json. Prove the default is the safe one: production must not be able
+# to reach that path by accident.
+r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-ok" BOOTSAHI_ALLOW_CONFIG_DEVICES=0)
+check_exit "exit code (no stub_info, no override -> refuse)" 1 "$r"
+check "no recipe generated without a resolvable target" "" \
+	"$(ls "$r/recipe-captured.json" 2>/dev/null || true)"
 
 if [ "$fail" -ne 0 ]; then
 	echo "SELFTEST FAILED"

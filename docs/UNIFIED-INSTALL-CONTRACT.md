@@ -131,7 +131,16 @@ Split by *who knows what, and when*:
 | Channel | Written by | When | Contents |
 |---|---|---|---|
 | `<ESP>/asahi/install-config.json` | macOS app → backend's `copy_idata` | after partitioning, by the existing `collect_installer_data()` hook | **intent only**: `targetImgref`, `user` (with `$6$` hash), `hostname`, `filesystem`, `encryption`, `wifi`, `cosign*`, `sshEnabled` |
-| `<ESP>/asahi/stub_info.json` (existing file, extra keys) | backend | same hook | **facts only the backend knows**: ESP and target-root **PARTUUIDs** |
+| `<ESP>/asahi/stub_info.json` (existing file, extra keys) | backend | same hook | **facts only the backend knows**: every created partition's **PARTUUID** plus its declared **role** (`esp`/`bootstrap`/`target`) |
+
+**Implemented.** The backend records `partitions[]` after `osins.install()`;
+the agent resolves `role -> PARTUUID -> /dev/disk/by-partuuid/<uuid>` and then
+refuses unless it can prove the target is safe: not the active root, not
+mounted, and on the same parent disk as the ESP. Zero or multiple matches for a
+role are refused rather than disambiguated — an ambiguous identity is not an
+identity. Roles are declared in the payload template rather than inferred from
+a display name or an ordinal, and `test-payload.sh` requires them, so a payload
+cannot silently ship without them and degrade the agent to the dev/test path.
 
 ### Credential lifetime on the ESP (the channel is not a safe resting place)
 

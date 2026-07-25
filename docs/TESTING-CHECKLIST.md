@@ -10,10 +10,10 @@
 >
 > | Issue | Subject | State |
 > |---|---|---|
-> | [#19](https://github.com/tuna-os/bootc-installer-asahi/issues/19) | D1 cannot format the root it runs from | **decided** ([ADR 0001](adr/0001-bootstrap-partition-layout.md)), not implemented |
+> | [#19](https://github.com/tuna-os/bootc-installer-asahi/issues/19) | D1 cannot format the root it runs from | **decided + implemented** ([ADR 0001](adr/0001-bootstrap-partition-layout.md)); real-fisherman run still open (#26) |
 > | [#20](https://github.com/tuna-os/bootc-installer-asahi/issues/20) | LUKS silently skipped in manual path | **fails closed** (#29); real support open |
 > | [#21](https://github.com/tuna-os/bootc-installer-asahi/issues/21) | Secrets persist on ESP; cleanup not failure-safe | **partly fixed** (#18, #29); one-shot secret channel open |
-> | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | designed, not implemented |
+> | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | **implemented**, covered by a real-GPT-disk test |
 > | [#23](https://github.com/tuna-os/bootc-installer-asahi/issues/23) | Both units never started | **fixed** (#29) |
 > | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | open |
 > | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | open |

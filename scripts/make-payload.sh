@@ -152,6 +152,7 @@ cat > "$OUT/installer_data.json" <<EOF
       "partitions": [
         {
           "name": "EFI",
+          "role": "esp",
           "type": "EFI",
           "size": "${ESP_SIZE}",
           "format": "fat",
@@ -162,12 +163,14 @@ cat > "$OUT/installer_data.json" <<EOF
         },
         {
           "name": "Bootstrap",
+          "role": "bootstrap",
           "type": "Linux",
           "size": "${ROOT_BYTES}B",
           "image": "root.img"
         },
         {
           "name": "Root",
+          "role": "target",
           "type": "Linux",
           "size": "${TARGET_MIN_BYTES}B",
           "expand": true

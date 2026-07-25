@@ -170,6 +170,23 @@ for os_entry in oses:
         if t.get("format"):
             failures.append("target partition must have no 'format' (fisherman formats it)")
 
+    # Roles are how the first-boot agent identifies its target (issue #22): it
+    # resolves role -> PARTUUID from stub_info.json rather than trusting a
+    # device path or an ordinal. A payload missing them degrades the agent to
+    # the config's device paths, which is the dev/test path, not a production
+    # one — so require them here rather than discovering it on hardware.
+    roles = [p.get("role") for p in parts]
+    for required in ("esp", "bootstrap", "target"):
+        if roles.count(required) != 1:
+            failures.append(f"expected exactly 1 partition with role={required!r}, "
+                            f"got {roles.count(required)}")
+    if bootstrap and bootstrap[0].get("role") != "bootstrap":
+        failures.append("the image-bearing partition must have role=bootstrap")
+    if target and target[0].get("role") != "target":
+        failures.append("the expanding image-less partition must have role=target")
+    if esp and esp[0].get("role") != "esp":
+        failures.append("the EFI partition must have role=esp")
+
     # Belt-and-braces on the whole point of the layout: the partition carrying
     # the bootstrap image can never also be the one that expands, because the
     # bootstrap cannot mkfs the filesystem it is running from.

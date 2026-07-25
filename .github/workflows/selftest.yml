@@ -37,3 +37,12 @@ jobs:
         run: sudo ./scripts/selftest.sh
       - name: bootsahi-agent selftest (install-config.json -> recipe.json contract)
         run: ./components/bootsahi-agent/test-agent.sh
+      # The one that covers the question that destroys machines: on a disk
+      # carrying BOTH the bootstrap the agent runs from and the target it may
+      # format, does it choose correctly and refuse when it cannot prove
+      # ownership? Needs root for losetup. No Mac required — all the
+      # destructive risk lives on the Linux side.
+      - name: Install disk-test dependencies
+        run: sudo apt-get install -y gdisk
+      - name: bootsahi-agent disk selftest (PARTUUID resolution on a real GPT disk)
+        run: sudo ./components/bootsahi-agent/test-agent-disk.sh

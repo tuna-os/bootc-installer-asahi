@@ -102,9 +102,11 @@ verify_signature() {
 # customMounts is used (not disk/filesystem auto-partition) because the
 # asahi-installer backend has already created espPartition/rootPartition.
 build_recipe() {
-    local cfg="$1"
+    local cfg="$1" root="$2" esp="$3"
     jq -n \
         --argjson c "$(cat "$cfg")" \
+        --arg root "$root" \
+        --arg esp "$esp" \
         '
         {
             customMounts: [
@@ -127,8 +129,8 @@ build_recipe() {
                 #
                 # "unformatted" skips only the mkfs; the mount and the efiPart
                 # bookkeeping fisherman needs for the boot entry both still happen.
-                { partition: $c.espPartition, target: "/boot/efi", fstype: "unformatted" },
-                { partition: $c.rootPartition, target: "/", fstype: $c.filesystem }
+                { partition: $esp, target: "/boot/efi", fstype: "unformatted" },
+                { partition: $root, target: "/", fstype: $c.filesystem }
             ],
             image: $c.targetImgref,
             targetImgref: $c.targetImgref,
@@ -237,6 +239,114 @@ refuse_active_root() {
     return 0
 }
 
+# ── Target resolution by PARTUUID (issue #22) ────────────────────────────────
+# The macOS app cannot name the target: it knows the partition as disk0s5 while
+# this agent sees nvme0n1p5. And a partition ORDINAL must never be trusted —
+# since ADR 0001 there are two Linux partitions, and picking the wrong one means
+# mkfs on the filesystem this agent is running from.
+#
+# So the backend records each partition it created (PARTUUID + declared role)
+# into <ESP>/asahi/stub_info.json, and we resolve from that. PARTUUID is stable
+# across macOS/Linux and immune to renumbering.
+PARTUUID_DIR="${BOOTSAHI_PARTUUID_DIR:-/dev/disk/by-partuuid}"
+TARGET_DEV=""
+ESP_DEV=""
+
+# find_stub_info echoes the backend's stub_info.json, or nothing. It lives
+# beside install-config.json because both arrive through the same
+# copy_installer_data channel into <ESP>/asahi/. Always exits 0 — absence is a
+# valid dev/test state, and the caller runs under `set -e`.
+find_stub_info() {
+    local cfg="$1" candidate
+    if [ -n "${BOOTSAHI_STUB_INFO_PATH:-}" ]; then
+        [ -f "$BOOTSAHI_STUB_INFO_PATH" ] && printf '%s\n' "$BOOTSAHI_STUB_INFO_PATH"
+        return 0
+    fi
+    candidate="$(dirname "$cfg")/stub_info.json"
+    [ -f "$candidate" ] && printf '%s\n' "$candidate"
+    return 0
+}
+
+# parent_disk_of echoes the parent block device name for a partition device,
+# via sysfs (/sys/class/block/<part> is a symlink into its parent disk), or
+# nothing. Used to prove the target lives on the same disk as our ESP.
+parent_disk_of() {
+    local dev base parent
+    base=$(basename "$(readlink -f "$1" 2>/dev/null)" 2>/dev/null) || return 0
+    [ -n "$base" ] || return 0
+    parent=$(readlink -f "/sys/class/block/$base" 2>/dev/null) || return 0
+    dev=$(basename "$(dirname "$parent")" 2>/dev/null) || return 0
+    # A whole disk's sysfs parent is "block", not another device.
+    [ "$dev" != "block" ] && printf '%s\n' "$dev"
+    return 0
+}
+
+# device_is_mounted reports whether a device is mounted anywhere right now.
+# Formatting a mounted filesystem is how you destroy a running system, so this
+# is a refusal, not a warning.
+device_is_mounted() {
+    local id
+    id=$(block_device_id "$1")
+    [ -n "$id" ] || return 1
+    awk -v want="$id" '$3 == want { found = 1 } END { exit !found }' \
+        /proc/self/mountinfo 2>/dev/null
+}
+
+# resolve_role_device maps a declared role ("target"/"esp"/"bootstrap") to a
+# block device via its recorded PARTUUID. Refuses on zero or multiple matches
+# rather than picking one — an ambiguous identity is not an identity.
+resolve_role_device() {
+    local stub="$1" role="$2" uuid n dev
+    n=$(jq -r --arg r "$role" '[.partitions[]? | select(.role == $r)] | length' "$stub" 2>/dev/null)
+    case "$n" in
+    1) : ;;
+    ""|0) log "stub_info.json records no partition with role '$role'"; return 1 ;;
+    *) log "stub_info.json records $n partitions with role '$role'; ambiguous, refusing"; return 1 ;;
+    esac
+    uuid=$(jq -r --arg r "$role" '.partitions[] | select(.role == $r) | .uuid' "$stub")
+    if [ -z "$uuid" ] || [ "$uuid" = "null" ]; then
+        log "partition with role '$role' has no recorded PARTUUID"
+        return 1
+    fi
+    dev=$(readlink -f "$PARTUUID_DIR/$uuid" 2>/dev/null || true)
+    if [ -z "$dev" ] || [ ! -b "$dev" ]; then
+        log "PARTUUID $uuid (role '$role') does not resolve to a block device under $PARTUUID_DIR"
+        return 1
+    fi
+    printf '%s\n' "$dev"
+    return 0
+}
+
+# verify_target verifies a resolved target is safe to hand to a formatter, and
+# prints the evidence. #22's requirement: never format anything whose identity
+# and ownership have not been positively established.
+verify_target() {
+    local target="$1" esp="$2" active_id target_id tparent eparent sectors
+    target_id=$(block_device_id "$target")
+    active_id=$(active_root_device_id)
+
+    if [ -n "$active_id" ] && [ "$target_id" = "$active_id" ]; then
+        log "resolved target $target is the device backing /; refusing"
+        return 1
+    fi
+    if device_is_mounted "$target"; then
+        log "resolved target $target is currently mounted; refusing to format it"
+        return 1
+    fi
+    tparent=$(parent_disk_of "$target")
+    eparent=$(parent_disk_of "$esp")
+    if [ -n "$tparent" ] && [ -n "$eparent" ] && [ "$tparent" != "$eparent" ]; then
+        log "resolved target $target is on disk '$tparent' but our ESP is on '$eparent'; refusing"
+        log "(a target on a different disk means the recorded identities are not from this install)"
+        return 1
+    fi
+
+    sectors=$(cat "/sys/class/block/$(basename "$target")/size" 2>/dev/null || echo "?")
+    log "preflight: target=$target parent=${tparent:-?} dev=$target_id sectors=$sectors mounted=no"
+    log "preflight: esp=$esp parent=${eparent:-?} dev=$(block_device_id "$esp")"
+    return 0
+}
+
 main() {
     # 0700 so the recipe (LUKS passphrase, Wi-Fi PSK) and log are not readable by
     # other local users under a permissive umask; umask 077 covers files created
@@ -289,6 +399,33 @@ main() {
         exit 1
     fi
 
+    # Resolve the devices to operate on. Preference order is deliberate:
+    #   1. stub_info.json's recorded PARTUUIDs — the only trustworthy source,
+    #      written by the backend that created the partitions.
+    #   2. install-config.json's rootPartition/espPartition — dev/test override
+    #      only, and already screened by refuse_active_root above.
+    # There is no third option: if neither yields a device we abort rather than
+    # guess, because the failure mode of guessing is an unrecoverable machine.
+    local stub
+    stub=$(find_stub_info "$cfg")
+    if [ -n "$stub" ]; then
+        log "resolving install target from $stub (recorded PARTUUIDs)"
+        TARGET_DEV=$(resolve_role_device "$stub" target) || exit 1
+        ESP_DEV=$(resolve_role_device "$stub" esp) || exit 1
+        if ! verify_target "$TARGET_DEV" "$ESP_DEV"; then
+            exit 1
+        fi
+    else
+        TARGET_DEV=$(jq -r '.rootPartition // empty' "$cfg")
+        ESP_DEV=$(jq -r '.espPartition // empty' "$cfg")
+        if [ -z "$TARGET_DEV" ] || [ -z "$ESP_DEV" ]; then
+            log "no stub_info.json and no rootPartition/espPartition in the config; cannot identify a target"
+            exit 1
+        fi
+        log "WARNING: no stub_info.json found; falling back to the config's device paths."
+        log "WARNING: this is a dev/test path — production installs must resolve by PARTUUID (issue #22)."
+    fi
+
     connect_wifi "$cfg"
 
     if ! verify_signature "$cfg" "$imgref"; then
@@ -296,7 +433,7 @@ main() {
         exit 1
     fi
 
-    build_recipe "$cfg"
+    build_recipe "$cfg" "$TARGET_DEV" "$ESP_DEV"
     log "running fisherman against $imgref"
     if ! "$FISHERMAN_BIN" "$RECIPE_FILE" >>"$LOG_FILE" 2>&1; then
         log "fisherman install failed; see $LOG_FILE"

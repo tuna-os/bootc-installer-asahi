@@ -8,6 +8,17 @@ cheapest/lowest-risk first — each step should pass before moving to the next.
 - Clone this repo and `hanthor/asahi-installer` (branch `json-machine-mode`)
   side by side.
 
+**CLT is enough to build, but not to test.** `XCTest.framework` ships inside
+`Xcode.app`, not the Command Line Tools, so on a CLT-only Mac `swift build`
+succeeds while `swift test` fails with `error: no such module 'XCTest'`. That
+is a host toolchain limitation, not a defect in the app — `mac-hardware-smoketest.sh`
+now detects it and reports SKIP rather than FAIL. Compile/link correctness is
+still covered by `swift build` locally and by the full-Xcode CI runner, which
+runs the tests green. To run them locally, install Xcode.app and:
+```sh
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+```
+
 ## 1. D3 app — does it even launch?
 Already CI-verified to compile/link/test on a GitHub macos-14 runner
 ([`bootsahi-app-build.yml`](../.github/workflows/bootsahi-app-build.yml),

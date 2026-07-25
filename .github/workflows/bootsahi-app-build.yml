@@ -9,7 +9,14 @@ name: bootsahi-app-build
 on:
   workflow_dispatch:
   push:
-    branches: [feat/d3-bootsahi-app-skeleton]
+    # feat/d3-bootsahi-app-skeleton is merged and dead; main is where the app
+    # actually changes now. Without main here the Swift suite had no automatic
+    # gate at all — it only ran when manually dispatched, and it is now SKIPped
+    # on CLT-only Macs (no XCTest), so local runs don't cover it either. This
+    # suite has already caught something reasoning alone did not: the Swift 6
+    # "reference to captured var 'self' in concurrently-executing code" error.
+    # The paths filter keeps macOS-runner use sparing — the app changes rarely.
+    branches: [main, feat/d3-bootsahi-app-skeleton]
     paths: ["macos-app/**"]
 
 jobs:

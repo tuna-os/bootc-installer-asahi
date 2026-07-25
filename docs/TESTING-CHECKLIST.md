@@ -68,9 +68,15 @@ rather than guessing at it under time pressure with a real disk on the line.
 
 ## 5. D1 agent — dry run only, not on real hardware yet
 `components/bootsahi-agent/bootsahi-agent.sh` is CI-tested
-(`test-agent.sh`, 8 assertions, all green) against `/bin/true`/`/bin/false`
-stand-ins for fisherman — never against a real `fisherman` binary or a real
-disk. Before trusting it on the M1 Air:
+(`test-agent.sh`, 8 assertions, all green) against generated shell stubs
+standing in for fisherman — never against a real `fisherman` binary or a
+real disk. The stubs are generated rather than borrowed from the host
+because the suite originally used `/bin/true` and `/bin/false`, which do
+not exist on macOS (it has `/usr/bin/true`); that made both success-path
+assertions fail on a Mac for reasons unrelated to the agent, and made the
+"fisherman itself fails" assertion pass for the wrong reason. If `$TMPDIR`
+is mounted `noexec` the suite now says so and tells you to re-run with
+`TMPDIR=$PWD/.tmp`. Before trusting it on the M1 Air:
 ```sh
 BOOTSAHI_CONFIG_PATH=/path/to/a/real/install-config.json \
 BOOTSAHI_NO_REBOOT=1 \

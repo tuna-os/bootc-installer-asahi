@@ -89,9 +89,21 @@ find_or_clone() { # var-name, env-var-value, candidate-dirs..., -- , clone-url, 
 	fi
 }
 
+# Only offer "the directory this script lives in" as a candidate when it's
+# actually a real file on disk (BASH_SOURCE[0]) — under `curl | bash`, bash
+# reads the script from stdin and BASH_SOURCE has no elements at all, so
+# indexing it under `set -u` throws "unbound variable", and the broken
+# command substitution used to silently resolve to "/" (cd "" + "/.." -> /),
+# which then "found" as a valid-but-wrong BOOTC_DIR and skipped every real
+# check. Guard it instead of relying on it being set.
+self_dir=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+	self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+
 find_or_clone BOOTC_DIR "${BOOTC_INSTALLER_ASAHI_DIR:-}" \
 	"$HOME/dev/bootc-installer-asahi" "$HOME/dev/tuna-os/bootc-installer-asahi" \
-	"$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" \
+	${self_dir:+"$self_dir"} \
 	-- https://github.com/tuna-os/bootc-installer-asahi.git
 
 find_or_clone ASAHI_INSTALLER_DIR "${ASAHI_INSTALLER_DIR:-}" \
@@ -163,7 +175,17 @@ if [ -n "$ASAHI_INSTALLER_DIR" ] && [ -f "$ASAHI_INSTALLER_DIR/src/main.py" ]; t
 	echo "smoketest" >"$D2SCRATCH/version.tag"
 	printf 'stub' >"$D2SCRATCH/boot/m1n1.bin"
 
-	RESULT=$(cd "$D2SCRATCH" && timeout 20 python3 - <<'PYEOF'
+	# macOS ships no `timeout(1)` by default (it's GNU coreutils; `gtimeout`
+	# via brew if installed). Not load-bearing here — the Python below has
+	# its own internal timeouts (thread join + select, ~25s worst case) and
+	# always proc.terminate()s before exiting, so run bare if neither exists.
+	TIMEOUT_CMD=""
+	if command -v timeout >/dev/null 2>&1; then
+		TIMEOUT_CMD="timeout 30"
+	elif command -v gtimeout >/dev/null 2>&1; then
+		TIMEOUT_CMD="gtimeout 30"
+	fi
+	RESULT=$(cd "$D2SCRATCH" && $TIMEOUT_CMD python3 - <<'PYEOF'
 import json, subprocess, sys, threading
 
 proc = subprocess.Popen(

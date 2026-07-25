@@ -1,7 +1,7 @@
-name: tuna-dive-app-build
+name: bootsahi-app-build
 
 # D3 skeleton was written with no Swift toolchain / macOS host available;
-# nothing in macos-app/TunaDive had ever been compiled. This uses GitHub's
+# nothing in macos-app/Bootsahi had ever been compiled. This uses GitHub's
 # macOS runners (free/unmetered on this public repo) to get real compiler
 # feedback before James tests on his own Mac — manual dispatch only
 # ("use macOS runners sparingly" per project convention), not on every push.
@@ -9,7 +9,7 @@ name: tuna-dive-app-build
 on:
   workflow_dispatch:
   push:
-    branches: [feat/d3-tuna-dive-app-skeleton]
+    branches: [feat/d3-bootsahi-app-skeleton]
     paths: ["macos-app/**"]
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
     runs-on: macos-14
     defaults:
       run:
-        working-directory: macos-app/TunaDive
+        working-directory: macos-app/Bootsahi
     steps:
       - uses: actions/checkout@v6
       - name: swift --version

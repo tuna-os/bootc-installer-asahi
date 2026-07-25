@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# test-agent.sh — proves tuna-dive-agent's install-config.json -> fisherman
+# test-agent.sh — proves bootsahi-agent's install-config.json -> fisherman
 # recipe.json transform and its exit-code contract, without needing real
 # disks, network, or a fisherman/bootc binary. Stubs FISHERMAN_BIN with
 # /bin/true or /bin/false to exercise the success/failure paths; the greetd
 # fallback logic downstream depends on the exit codes checked here being
-# exactly right (see tuna-dive-agent.sh's header comment for the contract).
+# exactly right (see bootsahi-agent.sh's header comment for the contract).
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-AGENT="$HERE/tuna-dive-agent.sh"
+AGENT="$HERE/bootsahi-agent.sh"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -26,8 +26,8 @@ run_agent() { # config_path fisherman_bin [extra_env...]
 	local cfg="$1" fbin="$2" rundir
 	rundir=$(mktemp -d -p "$WORK")
 	set +e
-	env TUNA_DIVE_RUN_DIR="$rundir" TUNA_DIVE_NO_REBOOT=1 TUNA_DIVE_CONFIG_PATH="$cfg" \
-		TUNA_DIVE_FISHERMAN_BIN="$fbin" "${@:3}" bash "$AGENT" >"$rundir/stdout" 2>&1
+	env BOOTSAHI_RUN_DIR="$rundir" BOOTSAHI_NO_REBOOT=1 BOOTSAHI_CONFIG_PATH="$cfg" \
+		BOOTSAHI_FISHERMAN_BIN="$fbin" "${@:3}" bash "$AGENT" >"$rundir/stdout" 2>&1
 	echo $? >"$rundir/exit"
 	set -e
 	echo "$rundir"
@@ -86,8 +86,8 @@ echo "==> cosignIdentity set but cosign not installed"
 r=$(run_agent "$WORK/cosign.json" /bin/true)
 check "exit code (cosign required, binary absent)" 1 "$(cat "$r/exit")"
 
-echo "==> TUNA_DIVE_SKIP_VERIFY escape hatch"
-r=$(run_agent "$WORK/cosign.json" /bin/true TUNA_DIVE_SKIP_VERIFY=1)
+echo "==> BOOTSAHI_SKIP_VERIFY escape hatch"
+r=$(run_agent "$WORK/cosign.json" /bin/true BOOTSAHI_SKIP_VERIFY=1)
 check "exit code (skip-verify escape hatch)" 0 "$(cat "$r/exit")"
 
 if [ "$fail" -ne 0 ]; then

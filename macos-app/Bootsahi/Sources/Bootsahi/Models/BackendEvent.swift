@@ -62,7 +62,7 @@ enum BackendEvent: Decodable {
     }
 }
 
-/// The one line TunaDive writes back per outstanding ask.
+/// The one line Bootsahi writes back per outstanding ask.
 struct BackendAnswer: Encodable {
     let id: String
     let value: JSONValue?

@@ -5,7 +5,7 @@ struct WelcomeView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Text("Tuna Dive").font(.largeTitle).bold()
+            Text("Bootsahi").font(.largeTitle).bold()
             Text("Install TunaOS, Dakota, or Bluefin on this Apple Silicon Mac.")
                 .foregroundStyle(.secondary)
 

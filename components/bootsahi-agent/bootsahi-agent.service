@@ -1,5 +1,5 @@
 [Unit]
-Description=Tuna Dive first-boot agent (install-config.json -> unattended bootc install)
+Description=Bootsahi first-boot agent (install-config.json -> unattended bootc install)
 Documentation=https://github.com/tuna-os/bootc-installer-asahi
 # Apple Silicon only; same convention as asahi-bootbin-sync.service.
 ConditionKernelVersion=asahi
@@ -13,7 +13,7 @@ Before=greetd.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/libexec/tuna-dive-agent
+ExecStart=/usr/libexec/bootsahi-agent
 # exit 2 = no install-config.json present yet: the expected state on every
 # boot before the macOS app has written one. Not a failure worth systemd
 # marking the unit "failed" over.

@@ -5,20 +5,20 @@
 import PackageDescription
 
 let package = Package(
-    name: "TunaDive",
+    name: "Bootsahi",
     platforms: [
         .macOS(.v13) // matches asahi-installer's own MIN_MACOS_VERSION
     ],
     targets: [
         .executableTarget(
-            name: "TunaDive",
-            path: "Sources/TunaDive",
+            name: "Bootsahi",
+            path: "Sources/Bootsahi",
             resources: [.copy("Resources/catalog.json")]
         ),
         .testTarget(
-            name: "TunaDiveTests",
-            dependencies: ["TunaDive"],
-            path: "Tests/TunaDiveTests"
+            name: "BootsahiTests",
+            dependencies: ["Bootsahi"],
+            path: "Tests/BootsahiTests"
         ),
     ]
 )

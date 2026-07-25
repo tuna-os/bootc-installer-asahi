@@ -7,7 +7,7 @@ import Combine
 ///
 /// Catalog/options selection happens entirely in this app, before the
 /// backend process is even started — the forked asahi-installer only ever
-/// installs the single "tuna-dive-boot" bootstrap OS (per DESIGN.md's core
+/// installs the single "bootsahi-boot" bootstrap OS (per DESIGN.md's core
 /// idea: one bootstrap payload per architecture, not per variant), so it
 /// has no reason to know about variant/desktop/stream at all. Those choices
 /// only matter for install-config.json, written after the backend finishes
@@ -40,8 +40,8 @@ final class InstallFlowViewModel: ObservableObject {
     private var process: InstallerProcess?
     private var e2eTimer: Timer?
 
-    /// Starts polling for drive-mode directives (tuna-dive-agent#6 §2). No-op
-    /// unless TUNADIVE_E2E_DRIVE=1 — see E2EDrive's doc comment. Call once,
+    /// Starts polling for drive-mode directives (issue #6 §2). No-op
+    /// unless BOOTSAHI_E2E_DRIVE=1 — see E2EDrive's doc comment. Call once,
     /// e.g. from the app's init.
     func startE2EDriveIfEnabled() {
         guard E2EDrive.isEnabled else { return }

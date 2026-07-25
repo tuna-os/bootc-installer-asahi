@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/tuna-os/bootc-installer-asahi/components/tuna-dive-agent/install-config.schema.json",
+  "$id": "https://github.com/tuna-os/bootc-installer-asahi/components/bootsahi-agent/install-config.schema.json",
   "title": "install-config.json",
-  "description": "Written by the Tuna Dive macOS app onto the ESP (<ESP>/tuna-dive/install-config.json) after the user completes the wizard. Consumed once, at first boot, by tuna-dive-agent, which never re-reads it after a successful install.",
+  "description": "Written by the Bootsahi macOS app onto the ESP (<ESP>/bootsahi/install-config.json) after the user completes the wizard. Consumed once, at first boot, by bootsahi-agent, which never re-reads it after a successful install.",
   "type": "object",
   "required": ["targetImgref", "rootPartition", "espPartition", "filesystem", "hostname"],
   "properties": {
@@ -42,7 +42,7 @@
         "fullname": { "type": "string" },
         "password": {
           "type": "string",
-          "description": "Should be a $6$ SHA-512-crypt hash, not plaintext — matches wootc's vault.json convention (hashed in the macOS app before this file is ever written to disk). fisherman's chpasswd step (projectbluefin/fisherman only — see tuna-dive-agent#6) auto-detects a $-prefixed value here and passes chpasswd -e so the hash is stored verbatim rather than re-hashed; a plain string is also accepted (chpasswd hashes it normally) but means the password sat in this file in the clear until the install completed."
+          "description": "Should be a $6$ SHA-512-crypt hash, not plaintext — matches wootc's vault.json convention (hashed in the macOS app before this file is ever written to disk). fisherman's chpasswd step (projectbluefin/fisherman only — see issue #6) auto-detects a $-prefixed value here and passes chpasswd -e so the hash is stored verbatim rather than re-hashed; a plain string is also accepted (chpasswd hashes it normally) but means the password sat in this file in the clear until the install completed."
         },
         "groups": { "type": "array", "items": { "type": "string" } }
       }
@@ -61,7 +61,7 @@
     },
     "cosignIdentity": {
       "type": "string",
-      "description": "Expected cosign certificate identity for targetImgref. When set, tuna-dive-agent verifies the image signature before deploying and refuses to proceed on mismatch."
+      "description": "Expected cosign certificate identity for targetImgref. When set, bootsahi-agent verifies the image signature before deploying and refuses to proceed on mismatch."
     },
     "cosignIssuer": {
       "type": "string",

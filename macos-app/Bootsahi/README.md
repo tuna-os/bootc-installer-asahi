@@ -1,4 +1,4 @@
-# Tuna Dive (macOS app) — SKELETON, partially CI-verified
+# Bootsahi (macOS app) — SKELETON, partially CI-verified
 
 D3 from [`docs/DESIGN.md`](../../docs/DESIGN.md): a SwiftUI app driving the
 forked asahi-installer backend
@@ -9,9 +9,9 @@ D2) over its `--json` stdio protocol
 **Written with no local Swift toolchain** — no macOS host in the environment
 that produced it. It was, however, subsequently built and tested for real on
 a GitHub-hosted `macos-14` runner (Xcode 15.4, Swift 5.10) via
-[`tuna-dive-app-build.yml`](../../.github/workflows/tuna-dive-app-build.yml)
-(dispatch manually with `gh workflow run tuna-dive-app-build.yml --ref
-feat/d3-tuna-dive-app-skeleton`, or check the Actions tab): **`swift build`
+[`bootsahi-app-build.yml`](../../.github/workflows/bootsahi-app-build.yml)
+(dispatch manually with `gh workflow run bootsahi-app-build.yml --ref
+feat/d3-bootsahi-app-skeleton`, or check the Actions tab): **`swift build`
 succeeds and all 8 tests in `BackendEventDecodingTests` pass**, with zero
 compiler warnings. That proves the Codable models, the protocol round-trip,
 and the SwiftUI view graph all type-check and link. It does **not** prove:
@@ -22,7 +22,7 @@ by `swift build`/`swift test` in CI.
 
 ## First things to do on the real Mac
 
-1. `cd macos-app/TunaDive && swift run` — confirm the app actually launches
+1. `cd macos-app/Bootsahi && swift run` — confirm the app actually launches
    and the welcome screen renders (CI proves it compiles, not that it runs).
 2. Point `InstallerProcess` at a real `python3` + the fork's `src/main.py`
    and confirm one real `ask`/`answer` round-trip before building out the
@@ -33,7 +33,7 @@ by `swift build`/`swift test` in CI.
 - `Models/` — `BackendEvent`/`BackendAsk`/`BackendMessage`/`JSONValue`
   mirror `docs/json-mode.md` exactly (by hand — no shared schema/codegen
   with the Python side yet). `InstallConfig` mirrors
-  `components/tuna-dive-agent/install-config.schema.json` in this same repo
+  `components/bootsahi-agent/install-config.schema.json` in this same repo
   (also by hand, also needs to be kept in sync manually).
 - `Backend/InstallerProcess.swift` — spawns `python3 main.py --json`,
   streams stdout line-by-line into decoded `BackendEvent`s, writes
@@ -46,14 +46,14 @@ by `swift build`/`swift test` in CI.
 
 - **Where `python3` comes from at runtime.** asahi-installer's own
   `install.sh` already solves this for the curl-|-sh path (provisions a
-  venv); TunaDive should probably reuse that rather than bundling a Python
+  venv); Bootsahi should probably reuse that rather than bundling a Python
   runtime. Not decided — see the comment in `InstallerProcess.swift`.
 - **catalog.json generation in CI.** `Resources/catalog.json` is a single
   hand-written placeholder entry. The real thing (generated from
   registry-map.yaml, per DESIGN.md) doesn't exist yet.
 - **The install-config.json handoff.** The forked backend creates the
   target partitions (stub macOS, ESP, root) but has no reason to know about
-  `install-config.json` — it only ever installs the single "tuna-dive-boot"
+  `install-config.json` — it only ever installs the single "bootsahi-boot"
   bootstrap OS. Something (this app, or a small addition to the fork) needs
   to write `install-config.json` onto the newly-created ESP once the
   backend's `do_install()` completes, using whatever partition devices it

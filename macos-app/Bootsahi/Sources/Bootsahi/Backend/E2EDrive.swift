@@ -1,7 +1,7 @@
 import Foundation
 
 /// Drive-mode E2E seam, mirroring wootc's (`app/app.go`'s
-/// `E2EDriveDirective`/`E2EDriveReport`, see tuna-dive-agent#6 §2). wootc
+/// `E2EDriveDirective`/`E2EDriveReport`, see issue #6 §2). wootc
 /// needed this because wails' WebView2 loader ignores the CDP debug-port
 /// env var, making Chrome-DevTools-style automation impossible — the fix
 /// was to drive the real UI through the same bridge every user click
@@ -13,14 +13,14 @@ import Foundation
 ///
 /// UNVERIFIED — this is a first draft of the directive shape, not proven
 /// against a real harness (wootc's own harness is Go/JS; nothing analogous
-/// exists on the Asahi side yet). Inert unless TUNADIVE_E2E_DRIVE=1.
+/// exists on the Asahi side yet). Inert unless BOOTSAHI_E2E_DRIVE=1.
 enum E2EDrive {
     static var isEnabled: Bool {
-        ProcessInfo.processInfo.environment["TUNADIVE_E2E_DRIVE"] == "1"
+        ProcessInfo.processInfo.environment["BOOTSAHI_E2E_DRIVE"] == "1"
     }
 
-    private static let directivePath = "/tmp/tuna-dive-e2e-drive.json"
-    private static let statePath = "/tmp/tuna-dive-e2e-drive-state.json"
+    private static let directivePath = "/tmp/bootsahi-e2e-drive.json"
+    private static let statePath = "/tmp/bootsahi-e2e-drive-state.json"
 
     enum Directive: Decodable {
         case selectCatalogEntry(imgref: String)

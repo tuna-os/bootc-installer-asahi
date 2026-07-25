@@ -15,7 +15,7 @@ Instead: **one bootstrap payload per architecture, ever.**
 ```
 macOS app ──▶ asahi-installer backend ──▶ writes:
    • stub macOS + per-install ESP (m1n1 boot.bin, U-Boot, systemd-boot/GRUB)
-   • "tuna-dive" bootstrap root (~1.5 GB): 16K asahi kernel, dracut-asahi,
+   • "bootsahi" bootstrap root (~1.5 GB): 16K asahi kernel, dracut-asahi,
      NetworkManager, podman/bootc, fisherman + minimal UI
    • install-config.json (chosen image ref, user, locale, LUKS choice, Wi-Fi)
         ↓ reboot (after the one unavoidable recoveryOS blessing step)
@@ -37,7 +37,7 @@ Why this wins:
 
 ## Components
 
-### 1. macOS app ("Tuna Dive")
+### 1. macOS app ("Bootsahi")
 - **Wraps, never reimplements, the asahi-installer Python backend** — APFS
   live-resize, stub macOS creation, per-install ESP, machine-signed m1n1
   stage-1 install, and Apple-firmware extraction to `<ESP>/vendorfw` are
@@ -56,7 +56,7 @@ Why this wins:
 - Distribution: notarized DMG + `curl | sh` fallback that runs the TUI
   backend directly (keeps CLI parity for servers/CI).
 
-### 2. Bootstrap image ("tuna-dive-boot")
+### 2. Bootstrap image ("bootsahi-boot")
 - Built in CI from the leanest asahi-capable base we have — bonito-asahi
   minimal (near-term) or Dakota-asahi minimal (long-term, from-source pride).
 - Contents: 16K asahi kernel + Apple DTBs, dracut-asahi (ESP firmware flow),
@@ -94,13 +94,13 @@ Why this wins:
 ## Milestones
 1. **D0** — *(payload pipeline + QEMU boot-gate proven; R2 upload still
    blocked on bucket credentials being added as repo secrets)* CI job builds
-   `tuna-dive-boot` (bonito-asahi minimal) + payload zip + installer_data.json
+   `bootsahi-boot` (bonito-asahi minimal) + payload zip + installer_data.json
    to R2; manual install with stock asahi-installer TUI pointed at our URL;
    QEMU boot-gate the bootstrap on every build.
 2. **D1** — *(done, #7)* first-boot agent: install-config.json → unattended
    `bootc install` of a chosen ref; headless/ssh path proven (this is also
    how the M1 Air test loop gets provisioned). Implemented as
-   [`components/tuna-dive-agent`](../components/tuna-dive-agent), which hands
+   [`components/bootsahi-agent`](../components/bootsahi-agent), which hands
    fisherman the asahi-installer backend's already-partitioned disk via
    `customMounts` and runs `bootc install to-filesystem` — `to-disk` remains
    debug/QEMU-only (D0's own payload harness).
@@ -117,9 +117,9 @@ Why this wins:
    upstream outreach" rule.
 4. **D3** — *(skeleton scaffolded; `swift build`/`swift test` CI-green on a
    GitHub macos-14 runner, not yet run on real hardware)* SwiftUI app
-   ([`macos-app/TunaDive`](../macos-app/TunaDive)) driving the backend;
+   ([`macos-app/Bootsahi`](../macos-app/Bootsahi)) driving the backend;
    notarized DMG; catalog.json generation in CI. `.github/workflows/
-   tuna-dive-app-build.yml` gives real compiler feedback without needing a
+   bootsahi-app-build.yml` gives real compiler feedback without needing a
    physical Mac — dispatch manually against any branch. Still needs actual
    hardware to prove the app launches, drives a real backend subprocess, and
    partitions a real disk. Biggest open design gap, documented in the app's
@@ -132,8 +132,8 @@ Why this wins:
    workflow removes that constraint for pure compile-correctness.
 
 ## Open questions for James
-- Naming: "Tuna Dive" is a placeholder; fisherman-adjacent naming preferred?
-- Repo home: tuna-os/tuna-dive (app + payload CI together, or split)?
+- Naming: "Bootsahi" is a placeholder; fisherman-adjacent naming preferred?
+- Repo home: tuna-os/bootsahi (app + payload CI together, or split)?
 - Does the bootstrap adopt fisherman as the first-boot agent directly, or a
   thin dedicated agent that calls bootc? (fisherman reuse keeps one installer
   brain across ISO and Asahi paths — my recommendation.)

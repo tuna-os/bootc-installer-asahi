@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# tuna-dive-agent — D1 first-boot agent for the "tuna-dive" bootstrap image.
+# bootsahi-agent — D1 first-boot agent for the "bootsahi" bootstrap image.
 #
-# Reads install-config.json (written by the Tuna Dive macOS app onto the ESP)
+# Reads install-config.json (written by the Bootsahi macOS app onto the ESP)
 # and drives `bootc install to-filesystem` via fisherman — NOT
 # `bootc install to-disk`, which is debug/QEMU-only (see D0's make-payload.sh /
 # test-payload.sh). By the time this agent runs, the asahi-installer backend
@@ -17,28 +17,28 @@
 #   1 = install-config.json present but the install failed; log preserved for the UI
 set -euo pipefail
 
-AGENT_NAME="tuna-dive-agent"
-RUN_DIR="${TUNA_DIVE_RUN_DIR:-/run/tuna-dive}"
+AGENT_NAME="bootsahi-agent"
+RUN_DIR="${BOOTSAHI_RUN_DIR:-/run/bootsahi}"
 LOG_FILE="$RUN_DIR/install.log"
 RECIPE_FILE="$RUN_DIR/recipe.json"
-FISHERMAN_BIN="${TUNA_DIVE_FISHERMAN_BIN:-fisherman}"
+FISHERMAN_BIN="${BOOTSAHI_FISHERMAN_BIN:-fisherman}"
 
 log() { echo "$AGENT_NAME: $*" | tee -a "$LOG_FILE" >&2; }
 
 find_install_config() {
-    # ${TUNA_DIVE_CONFIG_PATH} is the test/dev override; production always reads
+    # ${BOOTSAHI_CONFIG_PATH} is the test/dev override; production always reads
     # from the ESP, mirroring asahi-bootbin-sync's own ESP-detection candidates.
     #
     # Always returns 0 — "not found" is signalled by empty stdout, not a
     # nonzero exit, because the caller runs under `set -e` and "no config yet"
     # is an expected first-boot state, not a script error.
-    if [ -n "${TUNA_DIVE_CONFIG_PATH:-}" ]; then
-        [ -f "$TUNA_DIVE_CONFIG_PATH" ] && echo "$TUNA_DIVE_CONFIG_PATH"
+    if [ -n "${BOOTSAHI_CONFIG_PATH:-}" ]; then
+        [ -f "$BOOTSAHI_CONFIG_PATH" ] && echo "$BOOTSAHI_CONFIG_PATH"
         return 0
     fi
     for c in /boot/efi /efi /boot; do
-        if [ -f "$c/tuna-dive/install-config.json" ]; then
-            echo "$c/tuna-dive/install-config.json"
+        if [ -f "$c/bootsahi/install-config.json" ]; then
+            echo "$c/bootsahi/install-config.json"
             return 0
         fi
     done
@@ -66,8 +66,8 @@ verify_signature() {
     issuer=$(jq -r '.cosignIssuer // empty' "$cfg")
     [ -n "$identity" ] || return 0
 
-    if [ "${TUNA_DIVE_SKIP_VERIFY:-0}" = "1" ]; then
-        log "WARNING: TUNA_DIVE_SKIP_VERIFY=1 — skipping cosign verification (dev/test only, never set this in production)"
+    if [ "${BOOTSAHI_SKIP_VERIFY:-0}" = "1" ]; then
+        log "WARNING: BOOTSAHI_SKIP_VERIFY=1 — skipping cosign verification (dev/test only, never set this in production)"
         return 0
     fi
     if ! command -v cosign >/dev/null 2>&1; then
@@ -102,7 +102,7 @@ build_recipe() {
             encryption: ($c.encryption // {type: "none"}),
             user: ($c.user // {}),
             flatpaks: [],
-            distroID: "tuna-dive"
+            distroID: "bootsahi"
         }
         ' >"$RECIPE_FILE"
 }
@@ -152,7 +152,7 @@ main() {
     # the clear) before reboot; RUN_DIR is tmpfs so this is belt-and-braces.
     shred -u "$RECIPE_FILE" 2>/dev/null || rm -f "$RECIPE_FILE"
 
-    if [ "${TUNA_DIVE_NO_REBOOT:-0}" != "1" ]; then
+    if [ "${BOOTSAHI_NO_REBOOT:-0}" != "1" ]; then
         log "rebooting into the installed system"
         systemctl reboot
     fi

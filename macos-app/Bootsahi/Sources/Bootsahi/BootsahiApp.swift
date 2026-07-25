@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct TunaDiveApp: App {
+struct BootsahiApp: App {
     @StateObject private var flow = InstallFlowViewModel()
 
     var body: some Scene {

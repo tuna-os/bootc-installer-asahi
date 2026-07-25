@@ -15,9 +15,18 @@
 > | [#21](https://github.com/tuna-os/bootc-installer-asahi/issues/21) | Secrets persist on ESP; cleanup not failure-safe | **partly fixed** (#18, #29); one-shot secret channel open |
 > | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | **mostly** — see the caveat below |
 > | [#23](https://github.com/tuna-os/bootc-installer-asahi/issues/23) | Both units never started | **fixed** (#29) |
-> | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | open |
+> | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | open — cosign is now IN the image (pinned + checksummed), but the policy is still optional |
 > | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | open |
-> | [#27](https://github.com/tuna-os/bootc-installer-asahi/issues/27) | Payload contains no agent | open |
+> | [#27](https://github.com/tuna-os/bootc-installer-asahi/issues/27) | Payload contains no agent | **built + verified in CI**; base is still a GNOME image, not minimal |
+>
+> **What "ready to test for real" still means, concretely.** The bootstrap image
+> now exists and the agent has been observed running inside it (20 assertions
+> against `/usr/libexec/bootsahi-agent` as shipped, in CI). What has *not*
+> happened: the real fisherman has never been run against a real disk from that
+> image (#26), so no `bootc install` has ever been performed by this stack. The
+> QEMU boot harness (`scripts/test-boot-payload.sh`) is wired into the payload
+> job and now finally has a bootstrap worth booting — that is the next thing to
+> observe, and it needs no Mac.
 >
 > **#22 caveat, so the table isn't read as more than it is.** Resolution by
 > PARTUUID + role is implemented and covered by a real-GPT-disk test (13

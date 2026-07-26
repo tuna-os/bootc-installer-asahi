@@ -31,11 +31,21 @@ BASE_IMAGE="${BASE_IMAGE:-ghcr.io/tuna-os/bonito:gnome-asahi}"
 
 # Pinned, not floating. Issue #26 requires knowing exactly which fisherman a
 # payload was tested against; a floating tag makes that unanswerable after the
-# fact. projectbluefin/fisherman rather than tuna-os/fisherman deliberately —
-# it is what wootc vendors and carries fixes tuna-os/fisherman lacks (explicit
-# mount -t, chroot-based useradd). See issue #6.
-FISHERMAN_REPO="${FISHERMAN_REPO:-https://github.com/projectbluefin/fisherman}"
-FISHERMAN_REV="${FISHERMAN_REV:-d12b6cb2c1d3100971b1f4d24d7c2bc97a0d362c}"
+# fact.
+#
+# This used to point at projectbluefin/fisherman, because tuna-os/fisherman
+# lacked the explicit `mount -t` fix (a883428) without which an xfs root gets
+# attempted as ext4 and the install dies. That was a workaround for a fork
+# divergence, not a preference.
+#
+# tuna-os/fisherman is now synced (tuna-os/fisherman#59 brought over all 14
+# commits, which also turned that fork's own CI from red to green) and carries
+# two things projectbluefin does not: TPM2 enrolment on first boot, and the
+# customMounts validation this project needs (#58 — rejects unsupported
+# fstypes and refuses encryption on manual layouts, both of which are defects
+# we hit here). So the pin now points at our own fork.
+FISHERMAN_REPO="${FISHERMAN_REPO:-https://github.com/tuna-os/fisherman}"
+FISHERMAN_REV="${FISHERMAN_REV:-0cdf755fe641540b4957ada830b42ccd5d336654}"
 
 echo "==> base image:        $BASE_IMAGE"
 echo "==> fisherman:         $FISHERMAN_REPO @ ${FISHERMAN_REV:0:12}"

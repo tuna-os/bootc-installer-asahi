@@ -55,8 +55,8 @@ jobs:
       - name: Build the pinned fisherman
         run: |
           # Keep in sync with scripts/build-bootstrap-image.sh's FISHERMAN_REV.
-          REV=d12b6cb2c1d3100971b1f4d24d7c2bc97a0d362c
-          git clone --quiet https://github.com/projectbluefin/fisherman /tmp/fisherman-src
+          REV=0cdf755fe641540b4957ada830b42ccd5d336654
+          git clone --quiet https://github.com/tuna-os/fisherman /tmp/fisherman-src
           git -C /tmp/fisherman-src checkout --quiet "$REV"
           (cd /tmp/fisherman-src/fisherman && CGO_ENABLED=0 go build -trimpath -o /tmp/fisherman ./cmd/fisherman)
           /tmp/fisherman version || true

@@ -151,11 +151,11 @@ BOOTSAHI_NO_REBOOT=1 \
 with a real `fisherman` binary on `$PATH` pointed at a scratch loop device
 or VM disk — **not** the machine's real disk — to prove the `customMounts`
 + `bootloader: "systemd"` recipe it generates actually installs. Build that
-binary from **`projectbluefin/fisherman`**, not `tuna-os/fisherman` — the
-former is what wootc actually vendors and has real fixes (explicit
-`mount -t`, `chroot`-based `useradd`) the latter lacks as of this writing;
-see [issue #6](https://github.com/tuna-os/bootc-installer-asahi/issues/6)
-for the full comparison.
+binary from **`tuna-os/fisherman`**, which is now synced with
+projectbluefin (tuna-os/fisherman#59) and additionally carries the
+customMounts validation (#58). It previously had to be built from
+projectbluefin/fisherman because our fork lacked the explicit `mount -t` fix;
+that workaround is no longer needed.
 
 ## 6. Only after 1-5 pass: an actual bootc-Asahi install attempt
 This is the M1 Air test loop DESIGN.md refers to. Don't attempt it until

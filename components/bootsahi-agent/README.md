@@ -8,14 +8,16 @@ drives an unattended `bootc install to-filesystem`.
 
 **Fork choice matters here.** wootc (the Windows sibling of this project,
 see [issue #6](https://github.com/tuna-os/bootc-installer-asahi/issues/6))
-vendors `projectbluefin/fisherman`, which has real fixes `tuna-os/fisherman`
+vendored `projectbluefin/fisherman`, which had real fixes `tuna-os/fisherman`
 lacks as of 2026-07-18 (six days stale at time of writing): an explicit
 `mount -t` for the freshly-formatted root (the deployer initramfs can't
 probe the filesystem type, so an xfs root gets attempted as ext4 and fails),
-and `chroot <target> useradd` instead of `useradd --root` (`--root` also
+and the useradd handling (which is NOT simply "chroot instead of --root" —
+that was reversed for composefs-native; see docs/UNIFIED-INSTALL-CONTRACT.md)
+(`--root` also
 initializes the *host's* PAM/SELinux stack and fails against an otherwise
 perfectly writable target). Point `BOOTSAHI_FISHERMAN_BIN` at a binary
-built from `projectbluefin/fisherman`, not `tuna-os/fisherman`.
+built from `tuna-os/fisherman` (now synced — see tuna-os/fisherman#59).
 
 **Not** `bootc install to-disk` — that path (used by this repo's own
 `scripts/make-payload.sh` / `scripts/test-payload.sh`) is debug/QEMU-only,

@@ -62,20 +62,30 @@ the ESP.
 
 ## A real, non-hypothetical blocker found while writing this
 
-`components/bootsahi-agent` was built against `github.com/tuna-os/fisherman`.
-wootc actually vendors `github.com/projectbluefin/fisherman`, which is **six
-days ahead** (as of this writing) and has two fixes `tuna-os/fisherman`
-lacks entirely:
+**Resolved — this section is kept for the record.** `components/bootsahi-agent`
+was built against `github.com/tuna-os/fisherman` while wootc vendored
+`github.com/projectbluefin/fisherman`, which was 14 commits ahead and had
+fixes `tuna-os/fisherman` lacked entirely. The forks are now synced
+(tuna-os/fisherman#59), which incidentally turned tuna-os/fisherman's own CI
+from red to green — it had been failing on exactly those bugs. The pin here
+now points at `tuna-os/fisherman`, which additionally carries the
+customMounts validation (#58) and TPM2 first-boot enrolment that
+projectbluefin does not. What was missing:
 
 - **`MountType`** — an explicit `mount -t <fstype>` for the freshly-formatted
   root. Without it, the deployer initramfs (no libblkid probe path) can
   attempt an xfs root as ext4 and fail outright. The Asahi dracut/initramfs
   likely has the same no-probe property (unverified — needs an aarch64
   re-check, tracked in the hardware testing checklist).
-- **`chroot <target> useradd`** instead of **`useradd --root <target>`** —
-  `--root` also initializes the *host's* PAM/SELinux stack and fails against
-  a target whose `/etc` is otherwise perfectly writable (proven on
-  bluefin:lts per wootc's fisherman fork commit history).
+- ~~**`chroot <target> useradd`** instead of **`useradd --root <target>`**~~ —
+  **superseded.** The story evolved: `5025d4d` moved to `chroot` because
+  `--root` drags in the host's PAM/SELinux stack, then `e2a6499` **reversed
+  that for composefs-native** (dakota exit 127) back to `--root`, and
+  `f94a716`/`d12b6cb` refined it further. Classic ostree and composefs-native
+  need different handling, and fisherman detects which at runtime. Any
+  statement of the form "use chroot, not --root" — including earlier
+  revisions of this document — quotes one step of a sequence as though it
+  were the conclusion.
 
 `bootsahi-agent`'s README and the hardware testing checklist have been
 updated to point at `projectbluefin/fisherman` accordingly. This should be

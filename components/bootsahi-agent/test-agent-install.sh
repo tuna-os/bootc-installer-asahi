@@ -70,12 +70,25 @@ fi
 WORK=$(mktemp -d)
 LOOP=""
 cleanup() {
+	# Capture the real verdict FIRST, and hand it back untouched at the end.
+	#
+	# Without this the trap decided the exit status: under `set -e` a failing
+	# command inside an EXIT trap aborts the trap and the shell exits with
+	# THAT status. Every mnt-* directory is already unmounted by the time we
+	# get here, so `umount -R` fails, and a fully passing run printed
+	# "INSTALL SELFTEST PASSED" and then exited 1. CI called it red.
+	#
+	# A test that reports the opposite of its own verdict is worse than a
+	# failing test: it burns the credibility of every other assertion in the
+	# file. Hence `|| true` on each step, and an explicit `exit $rc`.
+	local rc=$?
 	for m in "$WORK"/mnt-*; do
-		[ -d "$m" ] && umount -R "$m" 2>/dev/null
+		[ -d "$m" ] && umount -R "$m" 2>/dev/null || true
 	done
 	# Only ever detach a loop device this script created.
-	[ -n "$LOOP" ] && losetup -d "$LOOP" 2>/dev/null
-	rm -rf "$WORK"
+	[ -n "$LOOP" ] && losetup -d "$LOOP" 2>/dev/null || true
+	rm -rf "$WORK" 2>/dev/null || true
+	exit "$rc"
 }
 trap cleanup EXIT
 
@@ -389,3 +402,4 @@ if [ "$fail" -ne 0 ]; then
 	exit 1
 fi
 echo "INSTALL SELFTEST PASSED"
+exit 0

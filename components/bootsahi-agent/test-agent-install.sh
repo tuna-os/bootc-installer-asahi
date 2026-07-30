@@ -292,13 +292,32 @@ if mount -o ro "$TARGET_DEV" "$WORK/mnt-target" 2>/dev/null; then
 	# load-bearing under `set -euo pipefail` — find and du exit non-zero on a
 	# missing path, and a bare command substitution assignment adopts that
 	# status, which silently killed the script here once already.
-	objects=$(find "$WORK/mnt-target/ostree" -mindepth 1 -maxdepth 4 \
-		\( -name "*.commit" -o -name "*.composefs" -o -name "*.dirtree" \) 2>/dev/null | head -1 || true)
-	deploy_kb=$(du -sk "$WORK/mnt-target/ostree" 2>/dev/null | cut -f1 || echo 0)
-	if [ -n "$objects" ] || [ "${deploy_kb:-0}" -gt 102400 ]; then
-		echo "ok: ostree tree holds a real deployment (${deploy_kb} KB)"
+	# Where the deployment lives depends on the backend, and looking in the
+	# wrong one reads as a failed install on a perfectly good one.
+	#
+	# fisherman's own isComposeFsNative (internal/post/post.go) is the
+	# authority here: composefs-native deploys to <sysroot>/state/deploy/<hash>/,
+	# and it ALSO creates an /ostree directory — so "/ostree is nearly empty"
+	# is the EXPECTED shape for the backend this project ships, not evidence of
+	# a failure. An earlier version of this check measured only /ostree, saw
+	# 4 KB against a bonito:gnome-asahi install that had genuinely succeeded,
+	# and reported no deployment. fisherman's comment records the same trap
+	# catching fisherman itself.
+	#
+	# So: accept either layout, and size the WHOLE target rather than one
+	# subtree, because the bytes are the claim being made.
+	if [ -d "$WORK/mnt-target/state/deploy" ]; then
+		layout="composefs-native (/state/deploy)"
+	elif [ -d "$WORK/mnt-target/ostree/deploy" ]; then
+		layout="classic ostree (/ostree/deploy)"
 	else
-		echo "FAIL: /ostree exists but holds no deployment (${deploy_kb} KB, no objects found)"
+		layout="unrecognized"
+	fi
+	deploy_kb=$(du -sk "$WORK/mnt-target" 2>/dev/null | cut -f1 || echo 0)
+	if [ "$layout" != "unrecognized" ] && [ "${deploy_kb:-0}" -gt 102400 ]; then
+		echo "ok: target holds a real deployment — $layout, ${deploy_kb} KB"
+	else
+		echo "FAIL: no deployment on the target — layout=$layout, ${deploy_kb} KB"
 		# Wide diagnostics on purpose. The first time this fired, the useful
 		# fact was not in /ostree at all — it was that the whole target held
 		# almost nothing despite the agent exiting 0 and boot entries being

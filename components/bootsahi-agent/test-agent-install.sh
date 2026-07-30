@@ -299,8 +299,20 @@ if mount -o ro "$TARGET_DEV" "$WORK/mnt-target" 2>/dev/null; then
 		echo "ok: ostree tree holds a real deployment (${deploy_kb} KB)"
 	else
 		echo "FAIL: /ostree exists but holds no deployment (${deploy_kb} KB, no objects found)"
+		# Wide diagnostics on purpose. The first time this fired, the useful
+		# fact was not in /ostree at all — it was that the whole target held
+		# almost nothing despite the agent exiting 0 and boot entries being
+		# written to the ESP. Print enough to tell "wrong place" from "nothing
+		# deployed" without needing another CI round trip.
+		echo "      ---- target root ----"
+		ls -la "$WORK/mnt-target" 2>/dev/null | head -25 | sed 's/^/      | /' || true
+		echo "      ---- whole-target usage ----"
+		du -sh "$WORK/mnt-target" 2>/dev/null | sed 's/^/      | /' || true
+		du -sh "$WORK/mnt-target"/* 2>/dev/null | sort -rh | head -12 | sed 's/^/      | /' || true
 		echo "      ---- layout under /ostree ----"
-		find "$WORK/mnt-target/ostree" -maxdepth 3 2>/dev/null | head -30 | sed 's/^/      | /' || true
+		find "$WORK/mnt-target/ostree" -maxdepth 4 2>/dev/null | head -40 | sed 's/^/      | /' || true
+		echo "      ---- /boot ----"
+		find "$WORK/mnt-target/boot" -maxdepth 3 2>/dev/null | head -25 | sed 's/^/      | /' || true
 		fail=1
 	fi
 	umount "$WORK/mnt-target"

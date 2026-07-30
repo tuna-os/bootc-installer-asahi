@@ -160,11 +160,18 @@ ln -sf "$ESP_DEV" "$PU/$ESP_UUID"
 ln -sf "$BOOTSTRAP_DEV" "$PU/$BOOTSTRAP_UUID"
 ln -sf "$TARGET_DEV" "$PU/$TARGET_UUID"
 
+# The partition fields are deliberately bogus AND deliberately distinct. Bogus
+# because the agent resolves the real devices by PARTUUID and role (#22) and
+# must ignore whatever the config claims — if these values ever reached
+# fisherman the install would fail loudly rather than silently do the wrong
+# thing. Distinct because the agent refuses when root and ESP name the same
+# device, which is a correct refusal that would otherwise mask the whole test:
+# the first run of this had both as /dev/null and never installed anything.
 cat >"$WORK/install-config.json" <<EOF
 {
   "targetImgref": "$TARGET_IMAGE",
   "rootPartition": "/dev/null",
-  "espPartition": "/dev/null",
+  "espPartition": "/dev/zero",
   "filesystem": "ext4",
   "hostname": "install-selftest",
   "encryption": {"type": "none"}

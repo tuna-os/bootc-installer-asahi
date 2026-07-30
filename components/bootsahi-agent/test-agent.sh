@@ -172,6 +172,13 @@ r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-dump")
 # whether they ran, passed, or were skipped.
 shape_fail=0
 grep -q '"bootloader": "systemd"' "$r/install.log" || { echo "FAIL: recipe missing bootloader=systemd"; shape_fail=1; }
+# Asserted as a PAIR, because bootc treats it as one. --bootloader systemd is
+# only honoured on the composefs deployment path; on the ostree path bootc
+# hands bootloader installation to bootupd and aborts with "bootupd is required
+# for ostree-based installs". Requesting one without the other is an install
+# that cannot succeed, and it fails after the target is already formatted.
+# Observed for real in CI before this assertion existed.
+grep -q '"composeFsBackend": true' "$r/install.log" || { echo "FAIL: recipe sets bootloader=systemd without composeFsBackend — bootc will demand bootupd and fail mid-install"; shape_fail=1; }
 grep -q '"target": "/"' "$r/install.log" || { echo "FAIL: recipe missing root customMount"; shape_fail=1; }
 grep -q '"target": "/boot/efi"' "$r/install.log" || { echo "FAIL: recipe missing ESP customMount"; shape_fail=1; }
 grep -q '"imageType": "bootc"' "$r/install.log" || { echo "FAIL: recipe missing imageType=bootc"; shape_fail=1; }

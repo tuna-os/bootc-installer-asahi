@@ -49,13 +49,29 @@
 > Only executing the install surfaced either one. That is the entire argument
 > for #26 existing, demonstrated twice on its first two runs.
 >
-> What those runs already prove positively, per partition: the ESP keeps its
-> Apple `vendorfw/` and m1n1 payload (so `fstype: "unformatted"` really does
-> skip the mkfs), the neighbouring macOS stand-in is untouched, the bootstrap
-> partition the agent runs from is untouched, and the target is formatted. The
-> remaining assertion — that a populated ostree deployment lands on the target —
-> has not gone green yet; it is what the fisherman#70 pin is expected to
-> unblock.
+> **A third failure was the test's fault, not the product's, and it is worth
+> recording as a trap.** With the two above fixed, the install got all the way
+> to the bootloader step and died with `Failed to open boot loader directory
+> /usr/lib/systemd/boot/efi`. `bootctl install` copies systemd-boot's EFI
+> binaries out of the *deployed image*, so `bootloader: systemd` is only
+> installable if that image ships systemd-boot. `bonito:gnome-asahi` does, and
+> installs cleanly. The small PR-time stand-in
+> (`quay.io/fedora/fedora-bootc:42`) ships grub2 + bootupd and does not, so the
+> PR-time job was structurally unable to pass. The stand-in now gets
+> `systemd-boot-unsigned` layered on so it can satisfy the recipe under test.
+>
+> The trap: this PR originally reasoned that the deployed image does not matter,
+> because the code paths under test are fisherman's and are "identical whichever
+> bootc image is deployed". That is true of partitioning, `unformatted`
+> handling, and staying in-partition, and false of the bootloader step, which
+> reads files out of the image. A stand-in has to satisfy the parts of the
+> recipe the test intends to execute.
+>
+> What these runs prove positively, per partition: the ESP keeps its Apple
+> `vendorfw/` and m1n1 payload (so `fstype: "unformatted"` really does skip the
+> mkfs), the neighbouring macOS stand-in is untouched, the bootstrap partition
+> the agent runs from is untouched, the target is formatted, and the ESP gains
+> boot entries.
 >
 > **#22 caveat, so the table isn't read as more than it is.** Resolution by
 > PARTUUID + role is implemented and covered by a real-GPT-disk test (13

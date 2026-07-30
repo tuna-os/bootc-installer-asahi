@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
     inputs:
       install_target_image:
-        description: "Image the real-install selftest deploys (default: a small bootc image; set to ghcr.io/tuna-os/bonito:gnome-asahi for the true target)"
-        default: "quay.io/fedora/fedora-bootc:42"
+        description: "Image the real-install selftest deploys. Empty (default) builds a small fedora-bootc + systemd-boot stand-in; set to ghcr.io/tuna-os/bonito:gnome-asahi for the true target."
+        default: ""
         type: string
   push:
     branches: [main]
@@ -111,15 +111,44 @@ jobs:
           git -C /tmp/fisherman-src checkout --quiet "$REV"
           (cd /tmp/fisherman-src/fisherman && CGO_ENABLED=0 go build -trimpath -o /tmp/fisherman ./cmd/fisherman)
           /tmp/fisherman version || true
-      # Defaults to a small bootc image rather than bonito:gnome-asahi. This
-      # test is about fisherman's consumer semantics — does "unformatted"
-      # really skip mkfs, does the install stay inside its partition — and
-      # those code paths are identical whichever bootc image is deployed. The
-      # real target is a dispatch input away when the question is about the
-      # image itself; making every PR pull a multi-gigabyte GNOME image would
-      # buy nothing and would not fit the runner.
+      # Deploying a small stand-in rather than bonito:gnome-asahi keeps every PR
+      # off a multi-gigabyte GNOME pull. But "any bootc image will do" turned out
+      # to be false, and that is worth spelling out because it cost a full debug
+      # cycle: the recipe declares bootloader systemd, and bootc's composefs path
+      # installs it by running `bootctl install`, which copies systemd-boot's EFI
+      # binaries out of the DEPLOYED image's /usr/lib/systemd/boot/efi. Plain
+      # quay.io/fedora/fedora-bootc:42 ships grub2 + bootupd and has no such
+      # directory, so the install ran all the way through deployment and then
+      # died at the bootloader step:
+      #
+      #   Failed to open boot loader directory /usr/lib/systemd/boot/efi
+      #
+      # bonito:gnome-asahi does ship systemd-boot and installs cleanly, so this
+      # is a property of the stand-in, not a defect in the recipe. Adding the one
+      # package that supplies those binaries keeps the pull small and makes the
+      # stand-in able to satisfy the recipe actually under test.
+      - name: Give the stand-in image a systemd-boot to install
+        if: ${{ !inputs.install_target_image }}
+        id: standin
+        run: |
+          cat >/tmp/Containerfile.standin <<'EOF'
+          FROM quay.io/fedora/fedora-bootc:42
+          RUN dnf install -y systemd-boot-unsigned && dnf clean all
+          EOF
+          # Root's store, because the selftest runs under sudo and fisherman
+          # reads the image from the invoking user's containers-storage.
+          sudo podman build -t localhost/fedora-bootc-sdboot:42 -f /tmp/Containerfile.standin /tmp
+          # Fail here, loudly and in seconds, rather than 2 minutes into an
+          # install, if the package ever stops shipping the aarch64 binary.
+          sudo podman run --rm localhost/fedora-bootc-sdboot:42 \
+            test -f /usr/lib/systemd/boot/efi/systemd-bootaa64.efi
+          # fisherman skips the registry pull for containers-storage: refs and
+          # exports the local image straight into its OCI cache, and strips the
+          # transport prefix before recording targetImgref in the installed
+          # system.
+          echo "ref=containers-storage:localhost/fedora-bootc-sdboot:42" >>"$GITHUB_OUTPUT"
       - name: Real-install selftest (canaries on ESP / neighbour / bootstrap / target)
         env:
           FISHERMAN_BIN: /tmp/fisherman
-          TARGET_IMAGE: ${{ inputs.install_target_image || 'quay.io/fedora/fedora-bootc:42' }}
+          TARGET_IMAGE: ${{ inputs.install_target_image || steps.standin.outputs.ref }}
         run: sudo -E ./components/bootsahi-agent/test-agent-install.sh

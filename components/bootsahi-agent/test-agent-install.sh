@@ -278,17 +278,29 @@ if mount -o ro "$TARGET_DEV" "$WORK/mnt-target" 2>/dev/null; then
 			fail=1
 		fi
 	done
-	# A deployment directory with actual content, not just the skeleton.
-	# `|| true` is load-bearing under `set -euo pipefail`: find exits non-zero
-	# when the path does not exist, and a bare command substitution assignment
-	# takes that exit status, so the script died here silently — skipping this
-	# assertion AND the ESP boot-entry one below, and reporting only a bare
-	# exit 1. A test that vanishes mid-run is worse than one that fails.
-	deploys=$(find "$WORK/mnt-target/ostree/deploy" -maxdepth 3 -name "deploy" -type d 2>/dev/null | head -1 || true)
-	if [ -n "$deploys" ] && [ -n "$(ls -A "$deploys" 2>/dev/null)" ]; then
-		echo "ok: ostree deployment directory is populated"
+	# A deployment carrying actual content, not just the directory skeleton.
+	#
+	# Deliberately layout-agnostic. The obvious check — a `deploy` directory
+	# under ostree/deploy/<stateroot>/ — is the CLASSIC ostree layout, and this
+	# install path is composefs-native, which does not use it. Asserting the
+	# classic shape reported "no populated ostree deployment" against a
+	# bonito:gnome-asahi install that had in fact succeeded (agent exit 0, boot
+	# entries written). Pinning a test to one backend's on-disk layout makes it
+	# fail on the backend we actually ship.
+	#
+	# So: require real bytes deployed, by either layout. `|| true` on each is
+	# load-bearing under `set -euo pipefail` — find and du exit non-zero on a
+	# missing path, and a bare command substitution assignment adopts that
+	# status, which silently killed the script here once already.
+	objects=$(find "$WORK/mnt-target/ostree" -mindepth 1 -maxdepth 4 \
+		\( -name "*.commit" -o -name "*.composefs" -o -name "*.dirtree" \) 2>/dev/null | head -1 || true)
+	deploy_kb=$(du -sk "$WORK/mnt-target/ostree" 2>/dev/null | cut -f1 || echo 0)
+	if [ -n "$objects" ] || [ "${deploy_kb:-0}" -gt 102400 ]; then
+		echo "ok: ostree tree holds a real deployment (${deploy_kb} KB)"
 	else
-		echo "FAIL: no populated ostree deployment under /ostree/deploy"
+		echo "FAIL: /ostree exists but holds no deployment (${deploy_kb} KB, no objects found)"
+		echo "      ---- layout under /ostree ----"
+		find "$WORK/mnt-target/ostree" -maxdepth 3 2>/dev/null | head -30 | sed 's/^/      | /' || true
 		fail=1
 	fi
 	umount "$WORK/mnt-target"

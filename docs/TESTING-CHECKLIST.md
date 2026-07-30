@@ -16,17 +16,33 @@
 > | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | **mostly** — see the caveat below |
 > | [#23](https://github.com/tuna-os/bootc-installer-asahi/issues/23) | Both units never started | **fixed** (#29) |
 > | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | open — cosign is now IN the image (pinned + checksummed), but the policy is still optional |
-> | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | open |
+> | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | **real install now runs in CI** (#43) — and it immediately found a defect that would have bricked an install; see below |
 > | [#27](https://github.com/tuna-os/bootc-installer-asahi/issues/27) | Payload contains no agent | **built + verified in CI**; base is still a GNOME image, not minimal |
 >
 > **What "ready to test for real" still means, concretely.** The bootstrap image
-> now exists and the agent has been observed running inside it (20 assertions
-> against `/usr/libexec/bootsahi-agent` as shipped, in CI). What has *not*
-> happened: the real fisherman has never been run against a real disk from that
-> image (#26), so no `bootc install` has ever been performed by this stack. The
-> QEMU boot harness (`scripts/test-boot-payload.sh`) is wired into the payload
-> job and now finally has a bootstrap worth booting — that is the next thing to
-> observe, and it needs no Mac.
+> exists and the agent has been observed running inside it (20 assertions
+> against `/usr/libexec/bootsahi-agent` as shipped, in CI). As of 2026-07-30 the
+> real fisherman has also performed a **real `bootc install`** against a
+> disposable loop disk (#43) — the first this stack has ever done. What still
+> has *not* happened is an install driven from the bootstrap image itself, and
+> nothing has been run on a Mac.
+>
+> **The first real install failed, and that is the point.** It died with
+> `bootupd is required for ostree-based installs` — *after* deploying 65 layers
+> (909 MB) and formatting the target. The recipe asked for `bootloader: systemd`
+> without `composeFsBackend`, and bootc only honours systemd-boot on the
+> composefs path. On a Mac that is a wiped partition and no bootable system.
+>
+> Every producer-side test passed on that recipe, and `fisherman validate`
+> accepted it — because it *is* a valid recipe. Only executing the install
+> surfaced it. That is the entire argument for #26 existing, demonstrated on its
+> first run. The two flags are now asserted as a pair so they cannot drift apart.
+>
+> What the same run proves positively, per partition: the ESP keeps its Apple
+> `vendorfw/` and m1n1 payload (so `fstype: "unformatted"` really does skip the
+> mkfs), the neighbouring macOS stand-in is untouched, the bootstrap partition
+> the agent runs from is untouched, and the target is formatted and carries a
+> populated ostree deployment.
 >
 > **#22 caveat, so the table isn't read as more than it is.** Resolution by
 > PARTUUID + role is implemented and covered by a real-GPT-disk test (13

@@ -137,7 +137,31 @@ jobs:
           EOF
           # Root's store, because the selftest runs under sudo and fisherman
           # reads the image from the invoking user's containers-storage.
-          sudo podman build -t localhost/fedora-bootc-sdboot:42 -f /tmp/Containerfile.standin /tmp
+          #
+          # Retried once through a lock reset, because podman on these runners
+          # intermittently cannot open its shm lock segment:
+          #
+          #   failed to open 2048 locks in /libpod_lock: numerical result out
+          #   of range
+          #
+          # podman reports that (ERANGE) when /dev/shm/libpod_lock is not the
+          # size it expects. It is a flake, not a property of this change: the
+          # identical step succeeded on the preceding commit, and podman is
+          # apt-installed fresh in this job, so no second version is competing
+          # for the segment. Recreating the segment is safe here because the
+          # store is empty at this point — nothing holds a lock index that
+          # renumbering could invalidate. Worth handling rather than ignoring,
+          # since a failure here throws away a ten-minute install run.
+          build_standin() {
+            sudo podman build -t localhost/fedora-bootc-sdboot:42 \
+              -f /tmp/Containerfile.standin /tmp
+          }
+          if ! build_standin; then
+            echo "podman build failed — resetting the shm lock segment and retrying once"
+            sudo rm -f /dev/shm/libpod_lock
+            sudo podman system renumber || true
+            build_standin
+          fi
           # Fail here, loudly and in seconds, rather than 2 minutes into an
           # install, if the package ever stops shipping the aarch64 binary.
           sudo podman run --rm localhost/fedora-bootc-sdboot:42 \

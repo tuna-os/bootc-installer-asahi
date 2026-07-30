@@ -7,6 +7,11 @@ name: Selftest
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      install_target_image:
+        description: "Image the real-install selftest deploys (default: a small bootc image; set to ghcr.io/tuna-os/bonito:gnome-asahi for the true target)"
+        default: "quay.io/fedora/fedora-bootc:42"
+        type: string
   push:
     branches: [main]
 
@@ -64,3 +69,49 @@ jobs:
         env:
           FISHERMAN_VALIDATE_BIN: /tmp/fisherman
         run: sudo -E ./components/bootsahi-agent/test-agent-disk.sh
+
+  # The only job that runs a REAL install. Everything above is producer-side:
+  # it checks what recipe we generate and that fisherman can parse it. None of
+  # it can observe what fisherman DOES to a disk, which is where the failures
+  # that cost a user their Mac live (issue #26).
+  #
+  # arm64 on purpose: fisherman deploys the target image, and the images this
+  # project installs are aarch64. Running this on x86 would test a different
+  # image than the one that ships.
+  install-selftest:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq gdisk podman dosfstools
+      # bootc install writes a full image to a loop file; the stock runner does
+      # not have room for that next to its preinstalled toolchains.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Build the pinned fisherman
+        run: |
+          # Keep in sync with scripts/build-bootstrap-image.sh's FISHERMAN_REV.
+          REV=0cdf755fe641540b4957ada830b42ccd5d336654
+          git clone --quiet https://github.com/tuna-os/fisherman /tmp/fisherman-src
+          git -C /tmp/fisherman-src checkout --quiet "$REV"
+          (cd /tmp/fisherman-src/fisherman && CGO_ENABLED=0 go build -trimpath -o /tmp/fisherman ./cmd/fisherman)
+          /tmp/fisherman version || true
+      # Defaults to a small bootc image rather than bonito:gnome-asahi. This
+      # test is about fisherman's consumer semantics — does "unformatted"
+      # really skip mkfs, does the install stay inside its partition — and
+      # those code paths are identical whichever bootc image is deployed. The
+      # real target is a dispatch input away when the question is about the
+      # image itself; making every PR pull a multi-gigabyte GNOME image would
+      # buy nothing and would not fit the runner.
+      - name: Real-install selftest (canaries on ESP / neighbour / bootstrap / target)
+        env:
+          FISHERMAN_BIN: /tmp/fisherman
+          TARGET_IMAGE: ${{ inputs.install_target_image || 'quay.io/fedora/fedora-bootc:42' }}
+        run: sudo -E ./components/bootsahi-agent/test-agent-install.sh

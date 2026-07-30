@@ -27,22 +27,35 @@
 > has *not* happened is an install driven from the bootstrap image itself, and
 > nothing has been run on a Mac.
 >
-> **The first real install failed, and that is the point.** It died with
-> `bootupd is required for ostree-based installs` — *after* deploying 65 layers
-> (909 MB) and formatting the target. The recipe asked for `bootloader: systemd`
-> without `composeFsBackend`, and bootc only honours systemd-boot on the
-> composefs path. On a Mac that is a wiped partition and no bootable system.
+> **The first real installs failed, and that is the point.** Two separate
+> defects, found in sequence, each of which would have bricked an install:
 >
-> Every producer-side test passed on that recipe, and `fisherman validate`
-> accepted it — because it *is* a valid recipe. Only executing the install
-> surfaced it. That is the entire argument for #26 existing, demonstrated on its
-> first run. The two flags are now asserted as a pair so they cannot drift apart.
+> 1. `bootupd is required for ostree-based installs` — the recipe asked for
+>    `bootloader: systemd` without `composeFsBackend`, and bootc only honours
+>    systemd-boot on the composefs path. Fixed here; the two flags are now
+>    asserted as a pair so they cannot drift apart.
+> 2. `Filesystem does not support fs-verity` — with composefs enabled, bootc
+>    calls `FS_IOC_ENABLE_VERITY` on deployed files, which ext4 refuses unless
+>    the feature was set at mkfs time. fisherman's automatic layout passes
+>    `-O verity` for exactly this reason; its manual (`customMounts`) layout,
+>    the one we must use to install beside macOS, did not. Fixed upstream in
+>    [fisherman#70](https://github.com/tuna-os/fisherman/pull/70); the pin here
+>    points at that PR until it merges.
 >
-> What the same run proves positively, per partition: the ESP keeps its Apple
-> `vendorfw/` and m1n1 payload (so `fstype: "unformatted"` really does skip the
-> mkfs), the neighbouring macOS stand-in is untouched, the bootstrap partition
-> the agent runs from is untouched, and the target is formatted and carries a
-> populated ostree deployment.
+> Both failed *late* — after the target was formatted and the image deployed
+> (65 layers, 909 MB). On a Mac that is a wiped partition next to the user's
+> macOS with nothing bootable in it. Every producer-side test passed on that
+> recipe and `fisherman validate` accepted it, because it *is* a valid recipe.
+> Only executing the install surfaced either one. That is the entire argument
+> for #26 existing, demonstrated twice on its first two runs.
+>
+> What those runs already prove positively, per partition: the ESP keeps its
+> Apple `vendorfw/` and m1n1 payload (so `fstype: "unformatted"` really does
+> skip the mkfs), the neighbouring macOS stand-in is untouched, the bootstrap
+> partition the agent runs from is untouched, and the target is formatted. The
+> remaining assertion — that a populated ostree deployment lands on the target —
+> has not gone green yet; it is what the fisherman#70 pin is expected to
+> unblock.
 >
 > **#22 caveat, so the table isn't read as more than it is.** Resolution by
 > PARTUUID + role is implemented and covered by a real-GPT-disk test (13

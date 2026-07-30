@@ -60,7 +60,11 @@ jobs:
       - name: Build the pinned fisherman
         run: |
           # Keep in sync with scripts/build-bootstrap-image.sh's FISHERMAN_REV.
-          REV=0cdf755fe641540b4957ada830b42ccd5d336654
+          # TEMPORARY: points at the head of tuna-os/fisherman#70, which adds
+          # -O verity to the manual-layout ext4 mkfs. Without it a composefs
+          # install onto customMounts dies after formatting the target. Move
+          # this to the merged SHA on dev once that PR lands.
+          REV=d6b21ddfb9c4e97ea13ee35b2b966e5dd5c028e2
           git clone --quiet https://github.com/tuna-os/fisherman /tmp/fisherman-src
           git -C /tmp/fisherman-src checkout --quiet "$REV"
           (cd /tmp/fisherman-src/fisherman && CGO_ENABLED=0 go build -trimpath -o /tmp/fisherman ./cmd/fisherman)
@@ -98,7 +102,11 @@ jobs:
       - name: Build the pinned fisherman
         run: |
           # Keep in sync with scripts/build-bootstrap-image.sh's FISHERMAN_REV.
-          REV=0cdf755fe641540b4957ada830b42ccd5d336654
+          # TEMPORARY: points at the head of tuna-os/fisherman#70, which adds
+          # -O verity to the manual-layout ext4 mkfs. Without it a composefs
+          # install onto customMounts dies after formatting the target. Move
+          # this to the merged SHA on dev once that PR lands.
+          REV=d6b21ddfb9c4e97ea13ee35b2b966e5dd5c028e2
           git clone --quiet https://github.com/tuna-os/fisherman /tmp/fisherman-src
           git -C /tmp/fisherman-src checkout --quiet "$REV"
           (cd /tmp/fisherman-src/fisherman && CGO_ENABLED=0 go build -trimpath -o /tmp/fisherman ./cmd/fisherman)

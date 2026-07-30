@@ -45,7 +45,13 @@ BASE_IMAGE="${BASE_IMAGE:-ghcr.io/tuna-os/bonito:gnome-asahi}"
 # fstypes and refuses encryption on manual layouts, both of which are defects
 # we hit here). So the pin now points at our own fork.
 FISHERMAN_REPO="${FISHERMAN_REPO:-https://github.com/tuna-os/fisherman}"
-FISHERMAN_REV="${FISHERMAN_REV:-0cdf755fe641540b4957ada830b42ccd5d336654}"
+# TEMPORARY: head of tuna-os/fisherman#70, which adds -O verity to the
+# manual-layout ext4 mkfs. bootc's --composefs-backend calls
+# FS_IOC_ENABLE_VERITY, which ext4 refuses unless the feature was set at format
+# time, so without this a composefs install onto customMounts fails *after* the
+# target is formatted and the image deployed. Move to the merged SHA on dev
+# once that PR lands.
+FISHERMAN_REV="${FISHERMAN_REV:-d6b21ddfb9c4e97ea13ee35b2b966e5dd5c028e2}"
 
 echo "==> base image:        $BASE_IMAGE"
 echo "==> fisherman:         $FISHERMAN_REPO @ ${FISHERMAN_REV:0:12}"

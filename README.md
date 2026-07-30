@@ -9,11 +9,17 @@ installer payload per variant×desktop, we ship **one minimal bootstrap
 payload** whose first boot runs [fisherman](https://github.com/projectbluefin/fisherman)
 to `bootc install` the image ref the user picked in the macOS app. The catalog
 is just registry refs (`bonito:gnome-asahi`, …), so a new variant needs no
-installer change — but it **must** pass the Asahi golden-manifest harness
-before it is offered. As of 2026-07-30 only `bonito` and `grouper` do (36/36
-each); the other six promoted `*-asahi` tags would leave a Mac unbootable
-([tunaOS#776](https://github.com/tuna-os/tunaOS/issues/776)). Offering a ref
-the harness has not passed is tracked as
+installer change — but a ref **must** pass the Asahi golden-manifest harness
+before it is offered, and "appears without touching the installer" must never
+be read as "appears without being verified."
+
+As of 2026-07-30 only `bonito` and `grouper` pass (36/36 each); the other six
+promoted `*-asahi` tags would leave a Mac unbootable
+([tunaOS#776](https://github.com/tuna-os/tunaOS/issues/776)). Today's shipped
+`catalog.json` is a placeholder holding one hand-written entry — `bonito`,
+which is verified — so nothing unbootable is currently offered. The hazard is
+in the generator DESIGN.md calls for: enumerating `*-asahi` tags from
+registry-map.yaml would pull in all six. That gate is
 [#41](https://github.com/tuna-os/bootc-installer-asahi/issues/41).
 
 ## Status

@@ -16,17 +16,81 @@
 > | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | **mostly** — see the caveat below |
 > | [#23](https://github.com/tuna-os/bootc-installer-asahi/issues/23) | Both units never started | **fixed** (#29) |
 > | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | open — cosign is now IN the image (pinned + checksummed), but the policy is still optional |
-> | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | open |
+> | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | **real install now runs in CI** (#43) — and it immediately found a defect that would have bricked an install; see below |
 > | [#27](https://github.com/tuna-os/bootc-installer-asahi/issues/27) | Payload contains no agent | **built + verified in CI**; base is still a GNOME image, not minimal |
 >
 > **What "ready to test for real" still means, concretely.** The bootstrap image
-> now exists and the agent has been observed running inside it (20 assertions
-> against `/usr/libexec/bootsahi-agent` as shipped, in CI). What has *not*
-> happened: the real fisherman has never been run against a real disk from that
-> image (#26), so no `bootc install` has ever been performed by this stack. The
-> QEMU boot harness (`scripts/test-boot-payload.sh`) is wired into the payload
-> job and now finally has a bootstrap worth booting — that is the next thing to
-> observe, and it needs no Mac.
+> exists and the agent has been observed running inside it (20 assertions
+> against `/usr/libexec/bootsahi-agent` as shipped, in CI). As of 2026-07-30 the
+> real fisherman has also performed a **real `bootc install`** against a
+> disposable loop disk (#43) — the first this stack has ever done. What still
+> has *not* happened is an install driven from the bootstrap image itself, and
+> nothing has been run on a Mac.
+>
+> **The first real installs failed, and that is the point.** Two separate
+> defects, found in sequence, each of which would have bricked an install:
+>
+> 1. `bootupd is required for ostree-based installs` — the recipe asked for
+>    `bootloader: systemd` without `composeFsBackend`, and bootc only honours
+>    systemd-boot on the composefs path. Fixed here; the two flags are now
+>    asserted as a pair so they cannot drift apart.
+> 2. `Filesystem does not support fs-verity` — with composefs enabled, bootc
+>    calls `FS_IOC_ENABLE_VERITY` on deployed files, which ext4 refuses unless
+>    the feature was set at mkfs time. fisherman's automatic layout passes
+>    `-O verity` for exactly this reason; its manual (`customMounts`) layout,
+>    the one we must use to install beside macOS, did not. Fixed upstream in
+>    [fisherman#70](https://github.com/tuna-os/fisherman/pull/70); the pin here
+>    points at that PR until it merges.
+>
+> Both failed *late* — after the target was formatted and the image deployed
+> (65 layers, 909 MB). On a Mac that is a wiped partition next to the user's
+> macOS with nothing bootable in it. Every producer-side test passed on that
+> recipe and `fisherman validate` accepted it, because it *is* a valid recipe.
+> Only executing the install surfaced either one. That is the entire argument
+> for #26 existing, demonstrated twice on its first two runs.
+>
+> **A third failure was the test's fault, not the product's, and it is worth
+> recording as a trap.** With the two above fixed, the install got all the way
+> to the bootloader step and died with `Failed to open boot loader directory
+> /usr/lib/systemd/boot/efi`. `bootctl install` copies systemd-boot's EFI
+> binaries out of the *deployed image*, so `bootloader: systemd` is only
+> installable if that image ships systemd-boot. `bonito:gnome-asahi` does, and
+> installs cleanly. The small PR-time stand-in
+> (`quay.io/fedora/fedora-bootc:42`) ships grub2 + bootupd and does not, so the
+> PR-time job was structurally unable to pass. The stand-in now gets
+> `systemd-boot-unsigned` layered on so it can satisfy the recipe under test.
+>
+> The trap: this PR originally reasoned that the deployed image does not matter,
+> because the code paths under test are fisherman's and are "identical whichever
+> bootc image is deployed". That is true of partitioning, `unformatted`
+> handling, and staying in-partition, and false of the bootloader step, which
+> reads files out of the image. A stand-in has to satisfy the parts of the
+> recipe the test intends to execute.
+>
+> **A fourth failure was also the test's fault: it asserted `/ostree` exists.**
+> With the stand-in fixed, the install completed — agent exit 0, all four
+> canaries intact, boot entries on the ESP, **2.1 GB deployed to the target** —
+> and the test still failed, because it required an `/ostree` directory. The
+> target root it actually produced was `boot/ composefs/ lost+found/ state/
+> usr/ var/`, with 2.0 GB under `composefs/` and 43 MB under `state/`, and no
+> `ostree/` entry at all. Across installs that all worked, `/ostree` has been
+> absent (fedora-bootc + systemd-boot), an empty 4 KB stub
+> (`bonito:gnome-asahi`), and populated (classic ostree) — so its presence
+> carries no information about whether an install succeeded. The deployment
+> check is now made on bytes plus a recognized deployment root
+> (`state/deploy`, `ostree/deploy`, or `composefs/`), which is what
+> fisherman's own `isComposeFsNative` keys on.
+>
+> The trap, and it is the same shape as the third one: a test that pins itself
+> to one backend's on-disk layout reports a healthy install as broken. That is
+> not a harmless false alarm here — it trains people to disregard the one test
+> standing between them and a wiped macOS partition.
+>
+> What these runs prove positively, per partition: the ESP keeps its Apple
+> `vendorfw/` and m1n1 payload (so `fstype: "unformatted"` really does skip the
+> mkfs), the neighbouring macOS stand-in is untouched, the bootstrap partition
+> the agent runs from is untouched, the target is formatted, and the ESP gains
+> boot entries.
 >
 > **#22 caveat, so the table isn't read as more than it is.** Resolution by
 > PARTUUID + role is implemented and covered by a real-GPT-disk test (13

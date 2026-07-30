@@ -7,6 +7,11 @@ name: Selftest
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      install_target_image:
+        description: "Image the real-install selftest deploys. Empty (default) builds a small fedora-bootc + systemd-boot stand-in; set to ghcr.io/tuna-os/bonito:gnome-asahi for the true target."
+        default: ""
+        type: string
   push:
     branches: [main]
 
@@ -55,7 +60,11 @@ jobs:
       - name: Build the pinned fisherman
         run: |
           # Keep in sync with scripts/build-bootstrap-image.sh's FISHERMAN_REV.
-          REV=0cdf755fe641540b4957ada830b42ccd5d336654
+          # TEMPORARY: points at the head of tuna-os/fisherman#70, which adds
+          # -O verity to the manual-layout ext4 mkfs. Without it a composefs
+          # install onto customMounts dies after formatting the target. Move
+          # this to the merged SHA on dev once that PR lands.
+          REV=d6b21ddfb9c4e97ea13ee35b2b966e5dd5c028e2
           git clone --quiet https://github.com/tuna-os/fisherman /tmp/fisherman-src
           git -C /tmp/fisherman-src checkout --quiet "$REV"
           (cd /tmp/fisherman-src/fisherman && CGO_ENABLED=0 go build -trimpath -o /tmp/fisherman ./cmd/fisherman)
@@ -64,3 +73,106 @@ jobs:
         env:
           FISHERMAN_VALIDATE_BIN: /tmp/fisherman
         run: sudo -E ./components/bootsahi-agent/test-agent-disk.sh
+
+  # The only job that runs a REAL install. Everything above is producer-side:
+  # it checks what recipe we generate and that fisherman can parse it. None of
+  # it can observe what fisherman DOES to a disk, which is where the failures
+  # that cost a user their Mac live (issue #26).
+  #
+  # arm64 on purpose: fisherman deploys the target image, and the images this
+  # project installs are aarch64. Running this on x86 would test a different
+  # image than the one that ships.
+  install-selftest:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq gdisk podman dosfstools
+      # bootc install writes a full image to a loop file; the stock runner does
+      # not have room for that next to its preinstalled toolchains.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Build the pinned fisherman
+        run: |
+          # Keep in sync with scripts/build-bootstrap-image.sh's FISHERMAN_REV.
+          # TEMPORARY: points at the head of tuna-os/fisherman#70, which adds
+          # -O verity to the manual-layout ext4 mkfs. Without it a composefs
+          # install onto customMounts dies after formatting the target. Move
+          # this to the merged SHA on dev once that PR lands.
+          REV=d6b21ddfb9c4e97ea13ee35b2b966e5dd5c028e2
+          git clone --quiet https://github.com/tuna-os/fisherman /tmp/fisherman-src
+          git -C /tmp/fisherman-src checkout --quiet "$REV"
+          (cd /tmp/fisherman-src/fisherman && CGO_ENABLED=0 go build -trimpath -o /tmp/fisherman ./cmd/fisherman)
+          /tmp/fisherman version || true
+      # Deploying a small stand-in rather than bonito:gnome-asahi keeps every PR
+      # off a multi-gigabyte GNOME pull. But "any bootc image will do" turned out
+      # to be false, and that is worth spelling out because it cost a full debug
+      # cycle: the recipe declares bootloader systemd, and bootc's composefs path
+      # installs it by running `bootctl install`, which copies systemd-boot's EFI
+      # binaries out of the DEPLOYED image's /usr/lib/systemd/boot/efi. Plain
+      # quay.io/fedora/fedora-bootc:42 ships grub2 + bootupd and has no such
+      # directory, so the install ran all the way through deployment and then
+      # died at the bootloader step:
+      #
+      #   Failed to open boot loader directory /usr/lib/systemd/boot/efi
+      #
+      # bonito:gnome-asahi does ship systemd-boot and installs cleanly, so this
+      # is a property of the stand-in, not a defect in the recipe. Adding the one
+      # package that supplies those binaries keeps the pull small and makes the
+      # stand-in able to satisfy the recipe actually under test.
+      - name: Give the stand-in image a systemd-boot to install
+        if: ${{ !inputs.install_target_image }}
+        id: standin
+        run: |
+          cat >/tmp/Containerfile.standin <<'EOF'
+          FROM quay.io/fedora/fedora-bootc:42
+          RUN dnf install -y systemd-boot-unsigned && dnf clean all
+          EOF
+          # Root's store, because the selftest runs under sudo and fisherman
+          # reads the image from the invoking user's containers-storage.
+          #
+          # Retried once through a lock reset, because podman on these runners
+          # intermittently cannot open its shm lock segment:
+          #
+          #   failed to open 2048 locks in /libpod_lock: numerical result out
+          #   of range
+          #
+          # podman reports that (ERANGE) when /dev/shm/libpod_lock is not the
+          # size it expects. It is a flake, not a property of this change: the
+          # identical step succeeded on the preceding commit, and podman is
+          # apt-installed fresh in this job, so no second version is competing
+          # for the segment. Recreating the segment is safe here because the
+          # store is empty at this point — nothing holds a lock index that
+          # renumbering could invalidate. Worth handling rather than ignoring,
+          # since a failure here throws away a ten-minute install run.
+          build_standin() {
+            sudo podman build -t localhost/fedora-bootc-sdboot:42 \
+              -f /tmp/Containerfile.standin /tmp
+          }
+          if ! build_standin; then
+            echo "podman build failed — resetting the shm lock segment and retrying once"
+            sudo rm -f /dev/shm/libpod_lock
+            sudo podman system renumber || true
+            build_standin
+          fi
+          # Fail here, loudly and in seconds, rather than 2 minutes into an
+          # install, if the package ever stops shipping the aarch64 binary.
+          sudo podman run --rm localhost/fedora-bootc-sdboot:42 \
+            test -f /usr/lib/systemd/boot/efi/systemd-bootaa64.efi
+          # fisherman skips the registry pull for containers-storage: refs and
+          # exports the local image straight into its OCI cache, and strips the
+          # transport prefix before recording targetImgref in the installed
+          # system.
+          echo "ref=containers-storage:localhost/fedora-bootc-sdboot:42" >>"$GITHUB_OUTPUT"
+      - name: Real-install selftest (canaries on ESP / neighbour / bootstrap / target)
+        env:
+          FISHERMAN_BIN: /tmp/fisherman
+          TARGET_IMAGE: ${{ inputs.install_target_image || steps.standin.outputs.ref }}
+        run: sudo -E ./components/bootsahi-agent/test-agent-install.sh

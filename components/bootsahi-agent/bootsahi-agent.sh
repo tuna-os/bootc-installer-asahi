@@ -135,7 +135,29 @@ build_recipe() {
             image: $c.targetImgref,
             targetImgref: $c.targetImgref,
             imageType: "bootc",
+            # bootloader and composeFsBackend are ONE decision, not two.
+            #
+            # systemd-boot is required here: the Asahi chain is m1n1 -> U-Boot
+            # -> EFI, and the U-Boot EFI implementation has no persistent EFI
+            # variables, so a grub2 install has nothing to write a boot entry
+            # into. But bootc only honours --bootloader systemd on the
+            # composefs deployment path; on the ostree path it delegates
+            # bootloader installation to bootupd and fails outright with
+            # "bootupd is required for ostree-based installs".
+            #
+            # Requesting systemd-boot without composefs is therefore an install
+            # that cannot succeed — and it fails LATE, after the image is
+            # deployed and the target partition has already been formatted.
+            # That is the worst possible place for it: the Mac is left with a
+            # wiped partition and no bootable system. Observed in CI by
+            # test-agent-install.sh, which is exactly the class of defect
+            # issue #26 exists to catch before hardware.
+            #
+            # This pairing is also what the first successful Dakota Asahi boot
+            # used (--composefs-backend --bootloader systemd), so it is the
+            # proven combination rather than a guess.
             bootloader: "systemd",
+            composeFsBackend: true,
             hostname: $c.hostname,
             encryption: ($c.encryption // {type: "none"}),
             user: ($c.user // {}),

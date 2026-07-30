@@ -15,7 +15,7 @@
 > | [#21](https://github.com/tuna-os/bootc-installer-asahi/issues/21) | Secrets persist on ESP; cleanup not failure-safe | **partly fixed** (#18, #29); one-shot secret channel open |
 > | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | **mostly** — see the caveat below |
 > | [#23](https://github.com/tuna-os/bootc-installer-asahi/issues/23) | Both units never started | **fixed** (#29) |
-> | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | open — cosign is now IN the image (pinned + checksummed), but the policy is still optional |
+> | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | **fails closed now** — a missing or half policy is refused, and the install deploys the digest cosign verified rather than the tag. Catalog-side trust policy still to come |
 > | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | **real install now runs in CI** (#43) — and it immediately found a defect that would have bricked an install; see below |
 > | [#27](https://github.com/tuna-os/bootc-installer-asahi/issues/27) | Payload contains no agent | **built + verified in CI**; base is still a GNOME image, not minimal |
 >

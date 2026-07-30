@@ -76,37 +76,94 @@ connect_wifi() {
     fi
 }
 
+# verify_signature FAILS CLOSED and prints the digest-pinned reference that the
+# install must actually deploy. Callers use that output, never the tag.
+#
+# It used to `return 0` whenever cosignIdentity was absent, which meant the
+# DEFAULT path installed an unverified, mutable tag while DESIGN.md claimed
+# "verifies cosign signatures before deploying" (issue #24). A policy you can
+# omit is not a policy; anyone able to edit install-config.json on the ESP — a
+# world-readable FAT partition — could select arbitrary content and the UI
+# would still say the image was verified.
+#
+# Two separate guarantees here, and the second is the one usually missed:
+#
+#  1. Fail closed. Missing identity OR issuer is a refusal, not a skip. Both
+#     are required: an identity without an issuer would accept a certificate
+#     for the same identity string from ANY OIDC provider.
+#  2. Verify and deploy the SAME BYTES. Verifying a tag and then handing that
+#     tag to the installer is a TOCTOU race — the tag can move between the two,
+#     so what was verified is not necessarily what lands. cosign reports the
+#     digest it actually verified, so we pin the deploy to that digest.
 verify_signature() {
     local cfg="$1" imgref="$2"
-    local identity issuer
+    local identity issuer out digest
+
     identity=$(jq -r '.cosignIdentity // empty' "$cfg")
     issuer=$(jq -r '.cosignIssuer // empty' "$cfg")
-    [ -n "$identity" ] || return 0
 
-    if [ "${BOOTSAHI_SKIP_VERIFY:-0}" = "1" ]; then
-        log "WARNING: BOOTSAHI_SKIP_VERIFY=1 — skipping cosign verification (dev/test only, never set this in production)"
+    if [ "${BOOTSAHI_ALLOW_UNVERIFIED:-0}" = "1" ]; then
+        # Deliberately loud, and it TAINTS the evidence: the marker file lands
+        # in the run dir so any test artifact produced under this override is
+        # self-identifying rather than looking like a clean pass. The bootstrap
+        # image never sets it; it exists for harnesses that have no signed
+        # image to point at.
+        log "WARNING: BOOTSAHI_ALLOW_UNVERIFIED=1 — deploying WITHOUT signature verification"
+        log "WARNING: dev/test only. Any result produced under this flag is tainted (issue #24)."
+        echo "unverified" >"$RUN_DIR/UNVERIFIED-INSTALL" 2>/dev/null || true
+        printf '%s\n' "$imgref"
         return 0
     fi
-    if ! command -v cosign >/dev/null 2>&1; then
-        log "cosignIdentity set but cosign is not installed in the bootstrap image; refusing to deploy an unverified image"
+
+    if [ -z "$identity" ] || [ -z "$issuer" ]; then
+        log "no signature policy in install-config.json (cosignIdentity and cosignIssuer are both required)"
+        log "refusing to deploy an unverified image — see issue #24"
+        log "(dev/test override: BOOTSAHI_ALLOW_UNVERIFIED=1, which taints the run)"
         return 1
     fi
+    if ! command -v cosign >/dev/null 2>&1; then
+        log "signature policy is set but cosign is missing from the bootstrap image; refusing"
+        return 1
+    fi
+
     log "verifying cosign signature for $imgref"
-    cosign verify \
+    if ! out=$(cosign verify \
         --certificate-identity "$identity" \
         --certificate-oidc-issuer "$issuer" \
-        "$imgref" >>"$LOG_FILE" 2>&1
+        --output json \
+        "$imgref" 2>>"$LOG_FILE"); then
+        log "cosign verification FAILED for $imgref"
+        return 1
+    fi
+    printf '%s' "$out" >>"$LOG_FILE"
+
+    # Pin to what cosign actually verified. If we cannot extract that digest we
+    # refuse rather than falling back to the tag — a fallback here would
+    # silently reintroduce exactly the race this exists to close.
+    digest=$(printf '%s' "$out" | jq -r '.[0].critical.image."docker-manifest-digest" // empty' 2>/dev/null)
+    case "$digest" in
+        sha256:*) ;;
+        *)
+            log "cosign verified $imgref but no manifest digest could be read from its output;"
+            log "refusing rather than deploying a tag that may have moved since verification"
+            return 1
+            ;;
+    esac
+
+    log "verified digest $digest — deploying by digest, not by tag"
+    printf '%s@%s\n' "${imgref%%@*}" "$digest"
 }
 
 # build_recipe translates install-config.json into a fisherman recipe.json.
 # customMounts is used (not disk/filesystem auto-partition) because the
 # asahi-installer backend has already created espPartition/rootPartition.
 build_recipe() {
-    local cfg="$1" root="$2" esp="$3"
+    local cfg="$1" root="$2" esp="$3" deploy_ref="$4"
     jq -n \
         --argjson c "$(cat "$cfg")" \
         --arg root "$root" \
         --arg esp "$esp" \
+        --arg deploy "$deploy_ref" \
         '
         {
             customMounts: [
@@ -132,7 +189,12 @@ build_recipe() {
                 { partition: $esp, target: "/boot/efi", fstype: "unformatted" },
                 { partition: $root, target: "/", fstype: $c.filesystem }
             ],
-            image: $c.targetImgref,
+            # image is what gets PULLED and deployed: the digest-pinned
+            # reference cosign actually verified. targetImgref is what the
+            # installed system tracks for upgrades, and must stay the mutable
+            # tag — pinning that too would freeze the machine on one build and
+            # it would never receive an update.
+            image: $deploy,
             targetImgref: $c.targetImgref,
             imageType: "bootc",
             # bootloader and composeFsBackend are ONE decision, not two.
@@ -469,13 +531,21 @@ main() {
 
     connect_wifi "$cfg"
 
-    if ! verify_signature "$cfg" "$imgref"; then
+    # DEPLOY_REF is what verification actually blessed — normally
+    # <repo>:<tag>@sha256:<digest>. Everything downstream installs THAT, so the
+    # bytes deployed are the bytes verified even if the tag moves in between.
+    local deploy_ref
+    if ! deploy_ref=$(verify_signature "$cfg" "$imgref"); then
         log "signature verification failed for $imgref; aborting install"
         exit 1
     fi
+    if [ -z "$deploy_ref" ]; then
+        log "internal error: verification succeeded but produced no reference to deploy; refusing"
+        exit 1
+    fi
 
-    build_recipe "$cfg" "$TARGET_DEV" "$ESP_DEV"
-    log "running fisherman against $imgref"
+    build_recipe "$cfg" "$TARGET_DEV" "$ESP_DEV" "$deploy_ref"
+    log "running fisherman against $deploy_ref"
     if ! "$FISHERMAN_BIN" "$RECIPE_FILE" >>"$LOG_FILE" 2>&1; then
         log "fisherman install failed; see $LOG_FILE"
         exit 1

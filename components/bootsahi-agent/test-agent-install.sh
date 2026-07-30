@@ -207,11 +207,18 @@ RUNDIR="$WORK/run"
 mkdir -p "$RUNDIR"
 cp "$WORK/install-config.json" "$RUNDIR/install-config.json"
 set +e
+# BOOTSAHI_ALLOW_UNVERIFIED is deliberate here, and the agent drops an
+# UNVERIFIED-INSTALL marker into the run dir saying so (#24). This test is
+# about what an install DOES to a disk; the signature policy is covered by
+# test-agent.sh against cosign stubs — missing policy, wrong signer, undigested
+# output, and digest pinning. Requiring a real signature here would tie a disk
+# test to a live signing identity and make it fail for unrelated reasons.
 env BOOTSAHI_RUN_DIR="$RUNDIR" BOOTSAHI_NO_REBOOT=1 \
 	BOOTSAHI_CONFIG_PATH="$RUNDIR/install-config.json" \
 	BOOTSAHI_STUB_INFO_PATH="$WORK/stub_info.json" \
 	BOOTSAHI_PARTUUID_DIR="$PU" \
 	BOOTSAHI_SKIP_HW_CHECK=1 \
+	BOOTSAHI_ALLOW_UNVERIFIED=1 \
 	BOOTSAHI_FISHERMAN_BIN="$FISHERMAN_BIN" \
 	bash "$AGENT" >"$RUNDIR/stdout" 2>&1
 agent_rc=$?

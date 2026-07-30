@@ -141,6 +141,7 @@ run_agent() { # stub_info_path [extra_env...]
 		BOOTSAHI_STUB_INFO_PATH="$stub" \
 		BOOTSAHI_PARTUUID_DIR="$PU" \
 		BOOTSAHI_SKIP_HW_CHECK=1 \
+		BOOTSAHI_ALLOW_UNVERIFIED=1 \
 		BOOTSAHI_FISHERMAN_BIN="$RECORDER" "${@:2}" \
 		bash "$AGENT" >"$rundir/stdout" 2>&1
 	echo $? >"$rundir/exit"

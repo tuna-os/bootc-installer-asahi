@@ -279,7 +279,12 @@ if mount -o ro "$TARGET_DEV" "$WORK/mnt-target" 2>/dev/null; then
 		fi
 	done
 	# A deployment directory with actual content, not just the skeleton.
-	deploys=$(find "$WORK/mnt-target/ostree/deploy" -maxdepth 3 -name "deploy" -type d 2>/dev/null | head -1)
+	# `|| true` is load-bearing under `set -euo pipefail`: find exits non-zero
+	# when the path does not exist, and a bare command substitution assignment
+	# takes that exit status, so the script died here silently — skipping this
+	# assertion AND the ESP boot-entry one below, and reporting only a bare
+	# exit 1. A test that vanishes mid-run is worse than one that fails.
+	deploys=$(find "$WORK/mnt-target/ostree/deploy" -maxdepth 3 -name "deploy" -type d 2>/dev/null | head -1 || true)
 	if [ -n "$deploys" ] && [ -n "$(ls -A "$deploys" 2>/dev/null)" ]; then
 		echo "ok: ostree deployment directory is populated"
 	else

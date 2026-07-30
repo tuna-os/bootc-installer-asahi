@@ -154,6 +154,38 @@ verify_signature() {
     printf '%s@%s\n' "${imgref%%@*}" "$digest"
 }
 
+# reject_plaintext_password refuses an account password that is not already a
+# crypt hash (issue #21).
+#
+# install-config.json is written to the ESP: an unencrypted, world-readable FAT
+# partition that persists for the whole download-and-install window, and which
+# is deliberately PRESERVED on failure so the fallback UI can retry. A password
+# as typed sitting there is readable by anything that can mount the ESP —
+# including macOS, before the machine ever boots Linux — and unlinking a file
+# on FAT flash is not erasure.
+#
+# A $6$ hash is not secret-free, but it is not a reusable credential the way the
+# typed password is: the user's password is very often reused elsewhere, and
+# that is the exposure worth eliminating first. This matches what wootc already
+# does on the Windows side, so both hosts feed fisherman the same shape.
+#
+# fisherman handles this natively: a password beginning with "$" is passed to
+# chpasswd with -e (verbatim hash), anything else is treated as plaintext. So
+# requiring the hash form here costs nothing downstream.
+reject_plaintext_password() {
+    local cfg="$1" pw
+    pw=$(jq -r '.user.password // empty' "$cfg")
+    [ -n "$pw" ] || return 0
+    case "$pw" in
+        '$'*) return 0 ;;
+    esac
+    log "user.password is not a crypt hash. install-config.json lives on the ESP,"
+    log "which is world-readable and survives a failed install, so a password as"
+    log "typed must never be written there. Supply a \$6\$ (SHA-512 crypt) hash;"
+    log "fisherman applies it verbatim via chpasswd -e. See issue #21."
+    return 1
+}
+
 # build_recipe translates install-config.json into a fisherman recipe.json.
 # customMounts is used (not disk/filesystem auto-partition) because the
 # asahi-installer backend has already created espPartition/rootPartition.
@@ -473,6 +505,10 @@ main() {
             exit 1
         fi
     done
+
+    if ! reject_plaintext_password "$cfg"; then
+        exit 1
+    fi
 
     # Before any network use or disk mutation: refuse configs we cannot honour,
     # and refuse the one that would destroy the running system.

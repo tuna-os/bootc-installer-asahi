@@ -346,6 +346,63 @@ else
 	fail=1
 fi
 
+# ── Secrets must not survive, on any path (issue #21) ───────────────────────
+
+echo "==> plaintext account password -> refuse (ESP is world-readable and survives failure)"
+jq '.user.password = "hunter2"' "$WORK/good.json" >"$WORK/plaintext-pw.json"
+r=$(run_agent "$WORK/plaintext-pw.json" "$STUBS/fisherman-ok")
+check_exit "exit code (plaintext password -> refuse)" 1 "$r"
+check "no recipe generated for a plaintext password" "" \
+	"$(ls "$r/recipe.json" 2>/dev/null || true)"
+
+echo "==> \$6\$ crypt hash is accepted (fisherman applies it via chpasswd -e)"
+jq '.user.password = "$6$abcdefgh$0123456789abcdef"' "$WORK/good.json" >"$WORK/hashed-pw.json"
+r=$(run_agent "$WORK/hashed-pw.json" "$STUBS/fisherman-ok")
+check_exit "exit code (hashed password accepted)" 0 "$r"
+
+# The assertion #21 actually asks for: force a failure AFTER the recipe exists
+# and prove no secret canary is left behind in runtime state. The recipe is the
+# dangerous artifact — it carries the LUKS passphrase and the password — and it
+# is derived, so unlike install-config.json there is no retry argument for
+# keeping it.
+echo "==> secret canary must not survive a failure after the recipe is written"
+SECRET_CANARY='SUPERSECRET-CANARY-b7f3'
+jq --arg p "\$6\$salt\$$SECRET_CANARY" '.user.password = $p' \
+	"$WORK/good.json" >"$WORK/canary.json"
+r=$(run_agent "$WORK/canary.json" "$STUBS/fisherman-fail")
+check_exit "exit code (fisherman failed after recipe creation)" 1 "$r"
+
+# Everything the agent DERIVES must be clean: the shredded recipe, and — easy
+# to forget — install.log, which the agent writes itself and which would
+# happily contain a secret if anything ever echoed the recipe into it.
+leaked=$(grep -rlF "$SECRET_CANARY" "$r" 2>/dev/null | grep -v '/install-config\.json$' || true)
+if [ -n "$leaked" ]; then
+	echo "FAIL: a secret canary survived a post-recipe failure in derived state:"
+	printf '%s\n' "$leaked" | sed 's/^/      | /'
+	fail=1
+else
+	echo "ok: no secret canary in any derived artifact after a failed install"
+fi
+
+# install-config.json is excluded above because the agent PRESERVES it on
+# failure on purpose, so the fallback UI can retry. That is the known open half
+# of #21 ("retry state contains non-secret intent only; retry prompts again for
+# secrets"), not an accident — so assert it explicitly rather than letting the
+# exclusion above quietly imply the file is clean.
+#
+# What has changed: since the password must now be a crypt hash, the retained
+# file no longer holds a reusable account credential. The Wi-Fi PSK and (once
+# implemented) the LUKS passphrase are still plaintext there, which is why #21
+# stays open.
+if grep -qF "$SECRET_CANARY" "$r/install-config.json" 2>/dev/null; then
+	echo "ok: install-config.json is retained on failure, as designed (#21 open half)"
+else
+	echo "FAIL: install-config.json was NOT retained after a failure — the fallback"
+	echo "      UI can no longer retry, which contradicts the documented behaviour."
+	echo "      If this is intentional, #21 and the retry design need updating."
+	fail=1
+fi
+
 echo "==> encryption requested (fisherman's manual path cannot do LUKS -> must fail closed)"
 r=$(run_agent "$WORK/encrypted.json" "$STUBS/fisherman-ok")
 check_exit "exit code (encryption unsupported -> fail closed)" 1 "$r"

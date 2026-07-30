@@ -70,6 +70,30 @@ printf '#!/bin/sh\nexit 1\n' >"$STUBS/fisherman-fail"
 printf '#!/bin/sh\ncat "$1"\ncp "$1" "$(dirname "$1")/recipe-captured.json"\n' >"$STUBS/fisherman-dump"
 chmod +x "$STUBS"/fisherman-*
 
+# cosign stubs (issue #24). Placed in their own directory that gets PREPENDED
+# to PATH, so the agent's `command -v cosign` finds the stub rather than a real
+# cosign that might be installed on the host — otherwise these tests would pass
+# or fail depending on the machine.
+#
+# The success stub emits the real shape of `cosign verify --output json`: an
+# array whose [0].critical.image."docker-manifest-digest" is the digest cosign
+# actually verified. The agent pins the deploy to that digest, so getting this
+# shape right is the difference between testing the contract and testing a
+# mock of our own invention.
+COSIGN_OK_DIGEST="sha256:1111111111111111111111111111111111111111111111111111111111111111"
+mkdir -p "$STUBS/bin-ok" "$STUBS/bin-fail" "$STUBS/bin-nodigest"
+cat >"$STUBS/bin-ok/cosign" <<EOF
+#!/bin/sh
+[ "\$1" = "verify" ] || exit 1
+printf '[{"critical":{"image":{"docker-manifest-digest":"$COSIGN_OK_DIGEST"}}}]\n'
+EOF
+# Verification itself fails — a wrong signer or wrong issuer looks like this.
+printf '#!/bin/sh\necho "error: no matching signatures" >&2\nexit 1\n' >"$STUBS/bin-fail/cosign"
+# Verification succeeds but the output carries no digest. The agent must refuse
+# rather than fall back to the tag, or the verify/deploy race reopens silently.
+printf '#!/bin/sh\nprintf "[{}]\\n"\n' >"$STUBS/bin-nodigest/cosign"
+chmod +x "$STUBS"/bin-*/cosign
+
 # Sanity-check the stubs by RUNNING them, not with `[ -x ]`. The whole bug
 # being fixed here was a stand-in that couldn't execute, so verify the thing
 # that actually matters. (`[ -x ]` is also not trustworthy everywhere: it
@@ -107,9 +131,14 @@ run_agent() { # config_path fisherman_bin [extra_env...]
 	# the agent's /proc/device-tree/compatible guard would exit 2 everywhere.
 	# Tests that WANT the guard active pass BOOTSAHI_SKIP_HW_CHECK=0 as extra
 	# env — a later duplicate assignment wins in env(1), verified.
+	# PATH is prepended with the SUCCEEDING cosign stub by default, so the
+	# default path through these tests is the production one: a real signature
+	# policy, verified. Tests that need cosign to fail or to be absent pass
+	# their own PATH= as extra env, which wins as the later assignment.
 	env BOOTSAHI_RUN_DIR="$rundir" BOOTSAHI_NO_REBOOT=1 BOOTSAHI_CONFIG_PATH="$usedcfg" \
 		BOOTSAHI_SKIP_HW_CHECK=1 \
 		BOOTSAHI_ALLOW_CONFIG_DEVICES=1 \
+		PATH="$STUBS/bin-ok:$PATH" \
 		BOOTSAHI_FISHERMAN_BIN="$fbin" "${@:3}" bash "$AGENT" >"$rundir/stdout" 2>&1
 	echo $? >"$rundir/exit"
 	set -e
@@ -124,9 +153,20 @@ cat >"$WORK/good.json" <<'EOF'
   "filesystem": "btrfs",
   "hostname": "tuna-mac",
   "user": {"username": "james", "groups": ["wheel"]},
-  "encryption": {"type": "none"}
+  "encryption": {"type": "none"},
+  "cosignIdentity": "https://example.test/signer",
+  "cosignIssuer": "https://example.test/oidc"
 }
 EOF
+
+# Same config with NO signature policy. Since #24 this must be REFUSED rather
+# than installed, so it is a fixture for the refusal test, not the happy path.
+jq 'del(.cosignIdentity, .cosignIssuer)' "$WORK/good.json" >"$WORK/no-policy.json"
+
+# Identity present, issuer missing. Must also be refused: a certificate
+# identity without a pinned issuer would be accepted from ANY OIDC provider,
+# so "half a policy" is not a weaker policy, it is no policy at all.
+jq 'del(.cosignIssuer)' "$WORK/good.json" >"$WORK/half-policy.json"
 
 cat >"$WORK/missing-field.json" <<'EOF'
 {"targetImgref": "x", "rootPartition": "/dev/null", "espPartition": "/dev/zero", "filesystem": "btrfs"}
@@ -179,6 +219,15 @@ grep -q '"bootloader": "systemd"' "$r/install.log" || { echo "FAIL: recipe missi
 # that cannot succeed, and it fails after the target is already formatted.
 # Observed for real in CI before this assertion existed.
 grep -q '"composeFsBackend": true' "$r/install.log" || { echo "FAIL: recipe sets bootloader=systemd without composeFsBackend — bootc will demand bootupd and fail mid-install"; shape_fail=1; }
+# The deployed image must be the DIGEST cosign verified, not the tag (#24).
+# Verifying a tag and then installing that tag is a TOCTOU race: the tag can
+# move in between, so the bytes verified need not be the bytes deployed.
+grep -q "\"image\": \".*@$COSIGN_OK_DIGEST\"" "$r/install.log" ||
+	{ echo "FAIL: recipe does not deploy the digest cosign verified — verify/deploy race is open"; shape_fail=1; }
+# ...while targetImgref stays the mutable tag, or the installed machine would
+# be pinned to one build forever and never take an upgrade.
+grep -q '"targetImgref": "ghcr.io/tuna-os/bonito:gnome-asahi"' "$r/install.log" ||
+	{ echo "FAIL: targetImgref should remain the tag so upgrades still track it"; shape_fail=1; }
 grep -q '"target": "/"' "$r/install.log" || { echo "FAIL: recipe missing root customMount"; shape_fail=1; }
 grep -q '"target": "/boot/efi"' "$r/install.log" || { echo "FAIL: recipe missing ESP customMount"; shape_fail=1; }
 grep -q '"imageType": "bootc"' "$r/install.log" || { echo "FAIL: recipe missing imageType=bootc"; shape_fail=1; }
@@ -247,13 +296,55 @@ check_exit "exit code (fisherman failure)" 1 "$r"
 check "install-config.json preserved after failure" "$r/install-config.json" \
 	"$(ls "$r/install-config.json" 2>/dev/null || true)"
 
-echo "==> cosignIdentity set but cosign not installed"
-r=$(run_agent "$WORK/cosign.json" "$STUBS/fisherman-ok")
-check_exit "exit code (cosign required, binary absent)" 1 "$r"
+# ── Signature verification must FAIL CLOSED (issue #24) ─────────────────────
+# Before this, verify_signature returned 0 whenever cosignIdentity was absent,
+# so the DEFAULT path deployed an unverified mutable tag while DESIGN.md
+# claimed signatures were verified. The install-config lives on the ESP — a
+# world-readable vfat partition — so "policy you can omit" means anyone who can
+# write that file chooses what gets installed.
 
-echo "==> BOOTSAHI_SKIP_VERIFY escape hatch"
-r=$(run_agent "$WORK/cosign.json" "$STUBS/fisherman-ok" BOOTSAHI_SKIP_VERIFY=1)
-check_exit "exit code (skip-verify escape hatch)" 0 "$r"
+echo "==> NO signature policy -> refuse (the #24 default-path defect)"
+r=$(run_agent "$WORK/no-policy.json" "$STUBS/fisherman-ok")
+check_exit "exit code (no cosign policy -> refuse)" 1 "$r"
+check "no recipe generated without a policy" "" \
+	"$(ls "$r/recipe.json" 2>/dev/null || true)"
+
+echo "==> identity WITHOUT issuer -> refuse (half a policy is no policy)"
+r=$(run_agent "$WORK/half-policy.json" "$STUBS/fisherman-ok")
+check_exit "exit code (identity without issuer -> refuse)" 1 "$r"
+
+echo "==> cosign verification FAILS (wrong signer / wrong issuer)"
+r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-ok" PATH="$STUBS/bin-fail:$PATH")
+check_exit "exit code (cosign verify failed -> refuse)" 1 "$r"
+
+echo "==> cosign succeeds but reports no digest -> refuse, never fall back to the tag"
+r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-ok" PATH="$STUBS/bin-nodigest:$PATH")
+check_exit "exit code (verified but undigested -> refuse)" 1 "$r"
+
+echo "==> policy set but cosign missing from the image"
+# Runs with the ORIGINAL PATH (no stub dir), so this only means anything on a
+# host without a real cosign. Stated rather than assumed: silently passing
+# because the host happens to lack a binary is not the same as asserting the
+# refusal, and PATH cannot be emptied here because the agent still needs jq.
+if command -v cosign >/dev/null 2>&1; then
+	echo "  skip: a real cosign is installed on this host, so its absence cannot be simulated"
+else
+	r=$(run_agent "$WORK/cosign.json" "$STUBS/fisherman-ok" PATH="$PATH")
+	check_exit "exit code (cosign required, binary absent)" 1 "$r"
+fi
+
+echo "==> BOOTSAHI_ALLOW_UNVERIFIED escape hatch taints the run"
+r=$(run_agent "$WORK/no-policy.json" "$STUBS/fisherman-ok" BOOTSAHI_ALLOW_UNVERIFIED=1)
+check_exit "exit code (explicit unverified override)" 0 "$r"
+# The override must be self-identifying in the artifacts. A dev bypass that
+# leaves a clean-looking run behind is how an unverified install gets mistaken
+# for evidence that verification works.
+if [ -f "$r/UNVERIFIED-INSTALL" ]; then
+	echo "ok: unverified run left a taint marker"
+else
+	echo "FAIL: BOOTSAHI_ALLOW_UNVERIFIED left no taint marker in the run dir"
+	fail=1
+fi
 
 echo "==> encryption requested (fisherman's manual path cannot do LUKS -> must fail closed)"
 r=$(run_agent "$WORK/encrypted.json" "$STUBS/fisherman-ok")

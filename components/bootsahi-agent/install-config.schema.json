@@ -9,7 +9,9 @@
     "rootPartition",
     "espPartition",
     "filesystem",
-    "hostname"
+    "hostname",
+    "cosignIdentity",
+    "cosignIssuer"
   ],
   "properties": {
     "targetImgref": {
@@ -95,11 +97,11 @@
     },
     "cosignIdentity": {
       "type": "string",
-      "description": "Expected cosign certificate identity for targetImgref. When set, bootsahi-agent verifies the image signature before deploying and refuses to proceed on mismatch."
+      "description": "REQUIRED. Expected cosign certificate identity for targetImgref. bootsahi-agent verifies the image signature before deploying and refuses to install if this is absent -- an omittable policy is not a policy, and this file lives on a world-readable vfat ESP (issue #24). The agent deploys the digest cosign reports, not the tag, so the bytes verified are the bytes installed."
     },
     "cosignIssuer": {
       "type": "string",
-      "description": "Expected cosign OIDC issuer, paired with cosignIdentity."
+      "description": "REQUIRED, and paired with cosignIdentity. An identity without a pinned issuer would be accepted from ANY OIDC provider, so a half-policy is refused exactly like a missing one."
     }
   }
 }

@@ -67,6 +67,25 @@
 > reads files out of the image. A stand-in has to satisfy the parts of the
 > recipe the test intends to execute.
 >
+> **A fourth failure was also the test's fault: it asserted `/ostree` exists.**
+> With the stand-in fixed, the install completed — agent exit 0, all four
+> canaries intact, boot entries on the ESP, **2.1 GB deployed to the target** —
+> and the test still failed, because it required an `/ostree` directory. The
+> target root it actually produced was `boot/ composefs/ lost+found/ state/
+> usr/ var/`, with 2.0 GB under `composefs/` and 43 MB under `state/`, and no
+> `ostree/` entry at all. Across installs that all worked, `/ostree` has been
+> absent (fedora-bootc + systemd-boot), an empty 4 KB stub
+> (`bonito:gnome-asahi`), and populated (classic ostree) — so its presence
+> carries no information about whether an install succeeded. The deployment
+> check is now made on bytes plus a recognized deployment root
+> (`state/deploy`, `ostree/deploy`, or `composefs/`), which is what
+> fisherman's own `isComposeFsNative` keys on.
+>
+> The trap, and it is the same shape as the third one: a test that pins itself
+> to one backend's on-disk layout reports a healthy install as broken. That is
+> not a harmless false alarm here — it trains people to disregard the one test
+> standing between them and a wiped macOS partition.
+>
 > What these runs prove positively, per partition: the ESP keeps its Apple
 > `vendorfw/` and m1n1 payload (so `fstype: "unformatted"` really does skip the
 > mkfs), the neighbouring macOS stand-in is untouched, the bootstrap partition

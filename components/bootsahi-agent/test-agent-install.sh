@@ -270,14 +270,25 @@ echo
 echo "==> Deployment on the target"
 mkdir -p "$WORK/mnt-target"
 if mount -o ro "$TARGET_DEV" "$WORK/mnt-target" 2>/dev/null; then
-	for p in ostree boot; do
-		if [ -e "$WORK/mnt-target/$p" ]; then
-			echo "ok: /$p present on the target"
-		else
-			echo "FAIL: /$p missing on the target — no bootc deployment landed"
-			fail=1
-		fi
-	done
+	# /boot only. /ostree is NOT required and must not be asserted here: a
+	# composefs-native install may not create it at all. Measured on a
+	# fedora-bootc + systemd-boot install that fully succeeded (agent exit 0,
+	# canaries intact, boot entries on the ESP), the target root was:
+	#
+	#     boot/  composefs/  lost+found/  state/  usr/  var/
+	#
+	# — 2.0G of it under composefs/, 43M under state/, and no ostree/ entry
+	# whatsoever. A separate bonito:gnome-asahi install left ostree/ present
+	# but empty (4 KB). So /ostree's presence ranges over absent, empty stub,
+	# and populated across installs that all worked, which makes it worthless
+	# as a liveness signal. Whether a deployment actually landed is decided
+	# below, from bytes plus a recognized deployment root.
+	if [ -e "$WORK/mnt-target/boot" ]; then
+		echo "ok: /boot present on the target"
+	else
+		echo "FAIL: /boot missing on the target — no bootc deployment landed"
+		fail=1
+	fi
 	# A deployment carrying actual content, not just the directory skeleton.
 	#
 	# Deliberately layout-agnostic. The obvious check — a `deploy` directory
@@ -310,6 +321,14 @@ if mount -o ro "$TARGET_DEV" "$WORK/mnt-target" 2>/dev/null; then
 		layout="composefs-native (/state/deploy)"
 	elif [ -d "$WORK/mnt-target/ostree/deploy" ]; then
 		layout="classic ostree (/ostree/deploy)"
+	elif [ -d "$WORK/mnt-target/composefs" ]; then
+		# Third signal, and not redundant: state/deploy is fisherman's own
+		# composefs-native test, but the bytes of the deployment live in
+		# composefs/ (2.0G of the 2.1G target on the measured install). If a
+		# future layout keeps the object store but moves the stateroot, this
+		# still recognizes a real deployment instead of crying "unrecognized"
+		# at 2 GB of installed system.
+		layout="composefs object store (/composefs)"
 	else
 		layout="unrecognized"
 	fi
@@ -328,8 +347,15 @@ if mount -o ro "$TARGET_DEV" "$WORK/mnt-target" 2>/dev/null; then
 		echo "      ---- whole-target usage ----"
 		du -sh "$WORK/mnt-target" 2>/dev/null | sed 's/^/      | /' || true
 		du -sh "$WORK/mnt-target"/* 2>/dev/null | sort -rh | head -12 | sed 's/^/      | /' || true
-		echo "      ---- layout under /ostree ----"
-		find "$WORK/mnt-target/ostree" -maxdepth 4 2>/dev/null | head -40 | sed 's/^/      | /' || true
+		# Dump every candidate deployment root, not just /ostree. The previous
+		# version dumped /ostree alone, which on a composefs-native target does
+		# not exist — so the failure output was an empty section and the round
+		# trip taught us nothing.
+		for root in state composefs ostree; do
+			[ -e "$WORK/mnt-target/$root" ] || continue
+			echo "      ---- layout under /$root ----"
+			find "$WORK/mnt-target/$root" -maxdepth 3 2>/dev/null | head -25 | sed 's/^/      | /' || true
+		done
 		echo "      ---- /boot ----"
 		find "$WORK/mnt-target/boot" -maxdepth 3 2>/dev/null | head -25 | sed 's/^/      | /' || true
 		fail=1

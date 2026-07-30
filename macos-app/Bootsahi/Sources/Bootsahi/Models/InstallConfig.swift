@@ -26,6 +26,19 @@ struct InstallConfig: Codable {
     struct UserSpec: Codable {
         var username: String
         var fullname: String?
+        /// MUST be a crypt hash (`$6$…`) by the time it is written to the ESP —
+        /// bootsahi-agent refuses a config whose password is not already
+        /// hashed, and will not install (issue #21).
+        ///
+        /// It currently holds the password as typed, which is fine only
+        /// because `writeInstallConfig()` is still a TODO and nothing reaches
+        /// the ESP yet. Whoever implements that write is the one who has to
+        /// hash it — the ESP is unencrypted, world-readable FAT that persists
+        /// across a failed install, and users reuse passwords.
+        ///
+        /// `openssl passwd -6` is available on macOS and produces the right
+        /// form; fisherman applies a `$`-prefixed value verbatim via
+        /// `chpasswd -e`, matching what wootc already does on Windows.
         var password: String
         var groups: [String]?
     }

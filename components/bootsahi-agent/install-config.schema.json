@@ -69,7 +69,7 @@
         },
         "password": {
           "type": "string",
-          "description": "Should be a $6$ SHA-512-crypt hash, not plaintext \u2014 matches wootc's vault.json convention (hashed in the macOS app before this file is ever written to disk). fisherman's chpasswd step (projectbluefin/fisherman only \u2014 see issue #6) auto-detects a $-prefixed value here and passes chpasswd -e so the hash is stored verbatim rather than re-hashed; a plain string is also accepted (chpasswd hashes it normally) but means the password sat in this file in the clear until the install completed."
+          "description": "MUST be a crypt hash (e.g. $6$ SHA-512), never the password as typed. This file is written to an unencrypted, world-readable FAT ESP and is deliberately retained after a failed install so the UI can retry, so a reusable credential must never appear here (issue #21). bootsahi-agent refuses a config whose password is not $-prefixed; fisherman applies such a value verbatim via chpasswd -e."
         },
         "groups": {
           "type": "array",

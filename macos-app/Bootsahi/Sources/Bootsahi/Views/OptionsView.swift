@@ -2,10 +2,8 @@ import SwiftUI
 
 struct OptionsView: View {
     @EnvironmentObject var flow: InstallFlowViewModel
-    @State private var passphrase = ""
     @State private var wantsEncryption = false
     @State private var wifiSSID = ""
-    @State private var wifiPSK = ""
 
     var body: some View {
         Form {
@@ -21,7 +19,10 @@ struct OptionsView: View {
             Section("Disk encryption") {
                 Toggle("Encrypt with LUKS", isOn: $wantsEncryption)
                 if wantsEncryption {
-                    SecureField("Passphrase", text: $passphrase)
+                    Text("You'll set the disk passphrase on this Mac's first "
+                         + "start-up in Linux. It is never saved to disk.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -31,17 +32,20 @@ struct OptionsView: View {
                 // password, the user always re-enters it. Not implemented
                 // in this skeleton; wifiSSID is a plain manual field.
                 TextField("Network name (SSID)", text: $wifiSSID)
-                SecureField("Wi-Fi password", text: $wifiPSK)
+                Text("You'll be asked for the Wi-Fi password on this Mac's first "
+                     + "start-up in Linux. It is never saved to disk.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Button("Continue") {
                 if wantsEncryption {
-                    flow.config.encryption = .init(type: "luks-passphrase", passphrase: passphrase)
+                    flow.config.encryption = .init(type: "luks-passphrase")
                 } else {
-                    flow.config.encryption = .init(type: "none", passphrase: nil)
+                    flow.config.encryption = .init(type: "none")
                 }
                 if !wifiSSID.isEmpty {
-                    flow.config.wifi = .init(ssid: wifiSSID, psk: wifiPSK.isEmpty ? nil : wifiPSK)
+                    flow.config.wifi = .init(ssid: wifiSSID)
                 }
                 flow.advanceToDiskSlider()
             }

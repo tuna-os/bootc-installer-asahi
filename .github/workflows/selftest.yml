@@ -40,6 +40,15 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Harness selftest (payload structure + installer_data layout contract)
         run: sudo ./scripts/selftest.sh
+      # The D2<->D1 boundary. The macOS backend and the Linux agent live in
+      # different repos and languages, and the only thing joining them is
+      # stub_info.json. Both sides' suites can stay green while the contract
+      # between them rots, and the failure only shows up on real hardware as a
+      # refusal to install — or a resolution to the wrong partition.
+      - name: Install backend-contract dependencies
+        run: pip install --quiet pytest
+      - name: Backend contract (pinned asahi-installer --json)
+        run: ./scripts/test-backend-contract.sh
       - name: bootsahi-agent selftest (install-config.json -> recipe.json contract)
         run: ./components/bootsahi-agent/test-agent.sh
       # The one that covers the question that destroys machines: on a disk

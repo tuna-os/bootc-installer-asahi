@@ -348,6 +348,45 @@ fi
 
 # ── Secrets must not survive, on any path (issue #21) ───────────────────────
 
+echo "==> a Wi-Fi passphrase in the config -> refuse (secrets never travel on the ESP)"
+jq '.wifi = {"ssid":"home","psk":"correct-horse"}' "$WORK/good.json" >"$WORK/wifi-psk.json"
+r=$(run_agent "$WORK/wifi-psk.json" "$STUBS/fisherman-ok")
+check_exit "exit code (wifi.psk present -> refuse)" 1 "$r"
+check "no recipe generated for a config carrying a Wi-Fi secret" "" \
+	"$(ls "$r/recipe.json" 2>/dev/null || true)"
+
+echo "==> a LUKS passphrase in the config -> refuse"
+jq '.encryption = {"type":"none","passphrase":"hunter2"}' "$WORK/good.json" >"$WORK/luks-pass.json"
+r=$(run_agent "$WORK/luks-pass.json" "$STUBS/fisherman-ok")
+check_exit "exit code (encryption.passphrase present -> refuse)" 1 "$r"
+
+echo "==> SSID alone is fine, and the password is ASKED FOR rather than read"
+# The stub stands in for systemd-ask-password: the agent has no TTY (oneshot,
+# Before=greetd), so a password agent is the only way to reach the user. Its
+# being called at all is the assertion — that is what proves the secret came
+# from the person at the machine and not from the ESP.
+printf '#!/bin/sh\necho "asked: $*" >>"%s/ask.log"\nprintf "s3cret\\n"\n' "$WORK" >"$STUBS/ask-ok"
+chmod +x "$STUBS/ask-ok"
+: >"$WORK/ask.log"
+jq '.wifi = {"ssid":"home"}' "$WORK/good.json" >"$WORK/wifi-ssid.json"
+r=$(run_agent "$WORK/wifi-ssid.json" "$STUBS/fisherman-ok" BOOTSAHI_ASK_PASSWORD_BIN="$STUBS/ask-ok")
+check_exit "exit code (ssid only, password prompted)" 0 "$r"
+if grep -q "Wi-Fi password for home" "$WORK/ask.log" 2>/dev/null; then
+	echo "ok: the agent asked the user for the Wi-Fi password"
+else
+	echo "FAIL: the agent never prompted for the Wi-Fi password"
+	sed 's/^/      | /' "$WORK/ask.log" 2>/dev/null
+	fail=1
+fi
+# And the answer must not end up written anywhere.
+if grep -rqF "s3cret" "$r" 2>/dev/null; then
+	echo "FAIL: the prompted Wi-Fi password was persisted in the run dir:"
+	grep -rlF "s3cret" "$r" 2>/dev/null | sed 's/^/      | /'
+	fail=1
+else
+	echo "ok: the prompted Wi-Fi password was never written to disk"
+fi
+
 echo "==> plaintext account password -> refuse (ESP is world-readable and survives failure)"
 jq '.user.password = "hunter2"' "$WORK/good.json" >"$WORK/plaintext-pw.json"
 r=$(run_agent "$WORK/plaintext-pw.json" "$STUBS/fisherman-ok")

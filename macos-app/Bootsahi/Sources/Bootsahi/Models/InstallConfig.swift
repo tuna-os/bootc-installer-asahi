@@ -18,9 +18,12 @@ struct InstallConfig: Codable {
     var cosignIdentity: String?
     var cosignIssuer: String?
 
+    /// Type only. Like the Wi-Fi passphrase, a LUKS passphrase is asked for at
+    /// first boot in Linux and never written to the ESP — storing the unlock
+    /// secret in the clear beside the volume it unlocks would defeat the point
+    /// of encrypting it (issue #21). The agent refuses a config carrying one.
     struct Encryption: Codable {
         var type: String // "none" | "luks-passphrase" | "tpm2-luks" | "tpm2-luks-passphrase"
-        var passphrase: String?
     }
 
     struct UserSpec: Codable {
@@ -43,9 +46,16 @@ struct InstallConfig: Codable {
         var groups: [String]?
     }
 
+    /// SSID only, deliberately. The passphrase is asked for on the Mac's
+    /// behalf at *first boot in Linux*, by bootsahi-agent via
+    /// systemd-ask-password — it is never written to the ESP, and the agent
+    /// refuses a config that contains one (issue #21).
+    ///
+    /// Encrypting it here would not have helped: any key the agent could use
+    /// unattended would have to live on the same disk an attacker already
+    /// holds, so it would move the secret rather than protect it.
     struct WifiCreds: Codable {
         var ssid: String
-        var psk: String?
     }
 }
 

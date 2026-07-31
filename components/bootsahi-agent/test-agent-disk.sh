@@ -112,12 +112,25 @@ cat >"$WORK/install-config.json" <<'EOF'
 EOF
 
 # The stub records exactly what the backend would after partitioning.
+# Shaped like the REAL producer, not like a minimal fixture of our own design.
+# asahi-installer records name/role/type/uuid/macos_device/size per partition
+# (see its stub_info["partitions"] block); a fixture carrying only the fields we
+# happen to read cannot catch us reading the wrong one.
+#
+# macos_device is deliberately MISLEADING here: every entry claims to be the
+# bootstrap's macOS device name. Under Linux those names mean nothing — macOS
+# calls it disk0s5, Linux calls it nvme0n1p5 — so an agent that ever resolved
+# by this field would format the partition it is running from. Getting the
+# right answer with these values present is the assertion.
 cat >"$WORK/stub_info.json" <<EOF
 {"vgid": "selftest",
  "partitions": [
-  {"name": "EFI", "role": "esp", "type": "EFI", "uuid": "$ESP_UUID"},
-  {"name": "Bootstrap", "role": "bootstrap", "type": "Linux", "uuid": "$BOOTSTRAP_UUID"},
-  {"name": "Root", "role": "target", "type": "Linux", "uuid": "$TARGET_UUID"}
+  {"name": "EFI", "role": "esp", "type": "EFI", "uuid": "$ESP_UUID",
+   "macos_device": "disk0s2", "size": 16777216},
+  {"name": "Bootstrap", "role": "bootstrap", "type": "Linux", "uuid": "$BOOTSTRAP_UUID",
+   "macos_device": "disk0s2", "size": 25165824},
+  {"name": "Root", "role": "target", "type": "Linux", "uuid": "$TARGET_UUID",
+   "macos_device": "disk0s2", "size": 55574528}
  ]}
 EOF
 

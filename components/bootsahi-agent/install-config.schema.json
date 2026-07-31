@@ -52,11 +52,10 @@
             "tpm2-luks",
             "tpm2-luks-passphrase"
           ]
-        },
-        "passphrase": {
-          "type": "string"
         }
-      }
+      },
+      "additionalProperties": false,
+      "description": "LUKS passphrases are asked for on the machine at first boot, never stored here. A config containing encryption.passphrase is refused (issue #21)."
     },
     "user": {
       "type": "object",
@@ -81,15 +80,13 @@
     },
     "wifi": {
       "type": "object",
-      "description": "Read from the current macOS network by the app (SSID only, per DESIGN.md \u2014 never the password); the user re-enters the passphrase on the Mac side and it is written here in the clear for one-shot consumption on tmpfs.",
+      "description": "SSID only. The passphrase is NEVER written here: this file lives on an unencrypted, world-readable FAT ESP that is deliberately retained after a failed install, and encrypting it would not help because any key the agent could use unattended must sit on the same disk an attacker already has. bootsahi-agent asks for the Wi-Fi password at first boot via systemd-ask-password and REFUSES a config containing wifi.psk (issue #21).",
       "properties": {
         "ssid": {
           "type": "string"
-        },
-        "psk": {
-          "type": "string"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "sshEnabled": {
       "type": "boolean",

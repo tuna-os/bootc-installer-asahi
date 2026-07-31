@@ -18,6 +18,17 @@ on:
     # The paths filter keeps macOS-runner use sparing — the app changes rarely.
     branches: [main, feat/d3-bootsahi-app-skeleton]
     paths: ["macos-app/**"]
+  # ...and on PRs that touch the app, or the gate arrives too late to be one.
+  # Running only on push-to-main means a Swift change is compile-checked AFTER
+  # it has already landed: the first sign of a break is a red main, not a red
+  # PR. That is exactly what happened to the change that added this trigger —
+  # fields were removed from InstallConfig and OptionsView with nothing
+  # verifying the app still built.
+  #
+  # The same paths filter applies, so macOS-runner use stays sparing: PRs that
+  # do not touch macos-app/ still cost nothing.
+  pull_request:
+    paths: ["macos-app/**"]
 
 jobs:
   build:

@@ -185,6 +185,37 @@ final class InstallFlowViewModel: ObservableObject {
         }
     }
 
+    /// Builds a view model parked in an arbitrary step, for SwiftUI previews and
+    /// for the documentation screenshot capture.
+    ///
+    /// It lives here rather than in an extension because `step`, `log` and
+    /// `pendingAsk` are `private(set)` — that restricts the setter to this
+    /// *file*, so a factory anywhere else could not populate them without
+    /// widening the access control for everyone. Widening it would mean any
+    /// view could push the flow into `.done` without the backend agreeing,
+    /// which is the property `terminalStep` exists to defend.
+    ///
+    /// Deliberately not `#if DEBUG`: the screenshots are built by the same
+    /// release configuration users run, so a debug-only seam would document a
+    /// binary nobody ships.
+    static func fixture(
+        step: Step,
+        catalog: Catalog? = nil,
+        selectedEntry: CatalogEntry? = nil,
+        config: InstallConfig? = nil,
+        log: [BackendMessage] = [],
+        pendingAsk: BackendAsk? = nil
+    ) -> InstallFlowViewModel {
+        let vm = InstallFlowViewModel()
+        vm.step = step
+        vm.catalog = catalog
+        vm.selectedEntry = selectedEntry
+        if let config { vm.config = config }
+        vm.log = log
+        vm.pendingAsk = pendingAsk
+        return vm
+    }
+
     private func handle(_ event: BackendEvent) {
         switch event {
         case .message(let msg):

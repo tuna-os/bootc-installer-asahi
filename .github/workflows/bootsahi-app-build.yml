@@ -45,6 +45,75 @@ jobs:
       - name: swift test
         run: swift test -v
 
+  # Regenerates docs/screenshots/*.png and the README walkthrough animation from
+  # the real SwiftUI views. Two things this buys beyond pretty docs:
+  #
+  #  1. Design review on a PR. A layout regression — text clipped at the window
+  #     edge, a control that reflows badly — is invisible in a diff and obvious
+  #     in an image. The artifact is downloadable from every PR that touches the
+  #     app, so the change can be looked at rather than imagined.
+  #  2. Docs that cannot silently rot. Hand-taken screenshots drift from the app
+  #     the moment anyone edits a view, and nothing ever tells you. These are
+  #     rebuilt from the source they document.
+  #
+  # Runs on the SAME runner as the build, after it, because a screenshot of code
+  # that does not compile is not a thing that can exist.
+  screenshots:
+    needs: build
+    runs-on: macos-14
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: macos-app/Bootsahi
+    steps:
+      - uses: actions/checkout@v6
+      - name: capture every screen
+        env:
+          BOOTSAHI_CAPTURE_DIR: ${{ github.workspace }}/docs/screenshots
+        run: swift test --filter ScreenshotCaptureTests
+      # The capture test SKIPS itself when BOOTSAHI_CAPTURE_DIR is unset, and a
+      # skipped XCTest still exits 0. Without this check a broken capture would
+      # publish a green tick and an unchanged, stale set of images — the failure
+      # mode being fixed, reintroduced by the fix.
+      - name: assert the capture actually produced files
+        run: |
+          cd "$GITHUB_WORKSPACE/docs/screenshots"
+          missing=0
+          for f in 01-welcome 02-choose-image 03-settings 04-disk-space \
+                   05-installing 06-recoveryos; do
+            if [ ! -s "$f.png" ]; then echo "::error::missing or empty $f.png"; missing=1; fi
+          done
+          [ -s walkthrough.gif ] || { echo "::error::missing walkthrough.gif"; missing=1; }
+          exit "$missing"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gui-screenshots
+          path: docs/screenshots/
+      # Only main commits them. On a PR the artifact is the deliverable: pushing
+      # generated images back into a contributor's branch rewrites their history
+      # for a file they did not touch.
+      - name: commit refreshed screenshots
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: ${{ github.workspace }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          if git diff --cached --quiet; then
+            echo "no screenshot changes"
+            exit 0
+          fi
+          # Byte-level comparison, deliberately. Rendering is not guaranteed
+          # reproducible across OS and font revisions, so a runner-image bump can
+          # produce a commit that changes only antialiasing. That churn is the
+          # cheaper failure: the alternative — a size or perceptual tolerance —
+          # silently drops small real regressions, and a screenshot rig that
+          # hides changes is worse than one that is occasionally chatty.
+          # [skip ci] stops this commit from triggering another run of itself.
+          git commit -m "docs: refresh GUI screenshots [skip ci]"
+          git push
+
   # The Liquid Glass surface in WizardChrome.swift is behind `#if
   # compiler(>=6.2)` because glassEffect needs the macOS 26 SDK to COMPILE, not
   # merely macOS 26 to run. On the macos-14 runner above that branch is excluded

@@ -4,6 +4,17 @@ The Apple Silicon (Asahi Linux) installer path for TunaOS-family bootc images
 — and anyone else's (Dakota, Bluefin, Bazzite): a macOS-driven install flow
 for M1/M2 Macs.
 
+<p align="center">
+  <img src="docs/screenshots/walkthrough.gif"
+       alt="The Bootsahi installer, screen by screen: welcome, choosing an image, account settings, the disk-space split, installation progress, and the recoveryOS hand-off."
+       width="700">
+</p>
+
+<p align="center">
+  <em>Every frame is rendered in CI from the real SwiftUI views — see the
+  <a href="docs/gui-walkthrough.md">step-by-step walkthrough</a>.</em>
+</p>
+
 **Architecture** (see [docs/DESIGN.md](docs/DESIGN.md)): instead of one
 installer payload per variant×desktop, we ship **one minimal bootstrap
 payload** whose first boot runs [fisherman](https://github.com/projectbluefin/fisherman)

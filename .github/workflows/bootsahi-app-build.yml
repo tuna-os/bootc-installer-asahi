@@ -44,3 +44,49 @@ jobs:
         run: swift build -v
       - name: swift test
         run: swift test -v
+
+  # The Liquid Glass surface in WizardChrome.swift is behind `#if
+  # compiler(>=6.2)` because glassEffect needs the macOS 26 SDK to COMPILE, not
+  # merely macOS 26 to run. On the macos-14 runner above that branch is excluded
+  # by the preprocessor — which means the job above cannot tell you whether it
+  # builds. Code that no CI configuration ever compiles is the same "gate that
+  # never fires" shape this repo has been fixing all along, so it gets a runner
+  # that actually reaches it.
+  #
+  # timeout-minutes is the important bit: if the macos-26 label does not resolve
+  # in this org, the job would otherwise sit queued indefinitely and look like a
+  # slow build rather than a missing runner. Failing after 20 minutes says so.
+  build-tahoe:
+    runs-on: macos-26
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: macos-app/Bootsahi
+    steps:
+      - uses: actions/checkout@v6
+      - name: swift --version
+        run: swift --version
+      # Proves the compiler gate is actually open here — otherwise a silently
+      # older toolchain would give a green check for a build that skipped the
+      # very code this job exists to compile.
+      - name: assert the Tahoe SDK path is live
+        run: |
+          cat > /tmp/gatecheck.swift <<'EOF'
+          #if compiler(>=6.2)
+          print("GLASS_PATH_COMPILED")
+          #else
+          print("GLASS_PATH_SKIPPED")
+          #endif
+          EOF
+          out=$(swift /tmp/gatecheck.swift)
+          echo "$out"
+          if [ "$out" != "GLASS_PATH_COMPILED" ]; then
+            echo "::error::macos-26 runner is not on a Swift 6.2+ toolchain, so the"
+            echo "::error::Liquid Glass branch was NOT compiled. This job would be"
+            echo "::error::reporting green for code it never looked at."
+            exit 1
+          fi
+      - name: swift build
+        run: swift build -v
+      - name: swift test
+        run: swift test -v

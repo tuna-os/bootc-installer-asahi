@@ -2,7 +2,6 @@ import SwiftUI
 
 struct OptionsView: View {
     @EnvironmentObject var flow: InstallFlowViewModel
-    @State private var wantsEncryption = false
     @State private var wifiSSID = ""
 
     var body: some View {
@@ -16,14 +15,28 @@ struct OptionsView: View {
                 SecureField("Password", text: passwordBinding)
             }
 
+            // Offering this control while the agent refuses encryption is
+            // worse than not offering it. fisherman's customMounts path — the
+            // only path this installer uses — never runs luksFormat/luksOpen
+            // (issue #20), so the agent fails closed on any
+            // encryption.type != "none". That refusal happens at FIRST BOOT,
+            // which is after the Mac's disk has been repartitioned and the
+            // payload written. A toggle here would therefore turn a choice
+            // the user makes in five seconds into a failed install they
+            // discover an hour later, on the far side of the destructive step.
+            //
+            // So the control is disabled rather than removed: the user learns
+            // encryption is unavailable BEFORE partitioning, and re-enabling
+            // it once the manual path implements LUKS is a local change here
+            // plus lifting the agent's refusal.
             Section("Disk encryption") {
-                Toggle("Encrypt with LUKS", isOn: $wantsEncryption)
-                if wantsEncryption {
-                    Text("You'll set the disk passphrase on this Mac's first "
-                         + "start-up in Linux. It is never saved to disk.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Toggle("Encrypt with LUKS", isOn: .constant(false))
+                    .disabled(true)
+                Text("Not available yet. The installer would have to leave the "
+                     + "disk unencrypted after telling you it was encrypted, "
+                     + "so it refuses instead.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Wi-Fi") {
@@ -39,11 +52,11 @@ struct OptionsView: View {
             }
 
             Button("Continue") {
-                if wantsEncryption {
-                    flow.config.encryption = .init(type: "luks-passphrase")
-                } else {
-                    flow.config.encryption = .init(type: "none")
-                }
+                // Emitted explicitly rather than left nil: the agent defaults a
+                // missing encryption block to "none" anyway, but writing it
+                // makes the config state what was decided instead of relying
+                // on both sides agreeing about absence.
+                flow.config.encryption = .init(type: "none")
                 if !wifiSSID.isEmpty {
                     flow.config.wifi = .init(ssid: wifiSSID)
                 }

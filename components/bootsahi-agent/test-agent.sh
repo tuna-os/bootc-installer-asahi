@@ -238,6 +238,40 @@ else
 	fail=1
 fi
 
+# ── the backend pairing is a constant, and must stay unreachable from config ──
+# Issue #26 asks for "representative ostree and composefs-native target
+# metadata". There is no ostree variant to be representative OF: the agent
+# writes bootloader=systemd and composeFsBackend=true as literals, and the
+# install-config schema has no field that can express either. An ostree-backend
+# install is not a configuration this project supports and fails to test — it is
+# one bootc rejects outright ("bootupd is required for ostree-based installs").
+#
+# So the testable property is not "does the ostree path work" but "can anything
+# in the config reach the pairing at all". That is what regresses: the plausible
+# future change is someone plumbing a backend option through the schema for
+# flexibility, at which point the constant silently becomes user-settable and
+# the failure returns — late, after the partition is formatted. Config keys that
+# do not exist today are exactly the ones a careless jq merge would start
+# honouring, so ask for them by the names they would most likely be given.
+echo "==> config cannot override the composefs/systemd pairing"
+jq '. + {"bootloader":"grub2","composeFsBackend":false,
+         "backend":"ostree","imageType":"ostree"}' \
+	"$WORK/good.json" >"$WORK/override-backend.json"
+r=$(run_agent "$WORK/override-backend.json" "$STUBS/fisherman-dump")
+override_fail=0
+grep -q '"bootloader": "systemd"' "$r/install.log" ||
+	{ echo "FAIL: a config key overrode bootloader — grub2 has no persistent EFI vars under U-Boot"; override_fail=1; }
+grep -q '"composeFsBackend": true' "$r/install.log" ||
+	{ echo "FAIL: a config key overrode composeFsBackend — bootc will demand bootupd and fail after formatting"; override_fail=1; }
+grep -q '"imageType": "bootc"' "$r/install.log" ||
+	{ echo "FAIL: a config key overrode imageType"; override_fail=1; }
+if [ "$override_fail" -eq 0 ]; then
+	echo "ok: config cannot override the composefs/systemd pairing"
+else
+	dump_agent_output "$r" "backend override"
+	fail=1
+fi
+
 # ── fstype tokens must be ones fisherman actually accepts ────────────────
 # The grep-for-substrings assertions above are why a bogus fstype survived: they
 # checked that a /boot/efi mount EXISTED, never what it would DO. fisherman's

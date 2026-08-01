@@ -167,10 +167,21 @@ struct OptionsView: View {
         password: String? = nil
     ) {
         let current = flow.config.user
-        flow.config.user = .init(
-            username: username ?? current?.username ?? "",
-            fullname: fullname ?? current?.fullname,
-            password: password ?? current?.password ?? "",
-            groups: current?.groups ?? ["wheel"])
+        // Spelled out into typed locals rather than one `.init(...)` of `??`
+        // chains. SwiftUI's type checker has to solve a view body's expressions
+        // together, and a four-argument initialiser whose arguments each hang
+        // off an optional chain — one of them a `String??` being flattened —
+        // was enough to push this past the solver's budget and fail the macOS
+        // build with "unable to type-check this expression in reasonable time".
+        // Annotating each local gives it the answer instead of asking for it.
+        let newUsername: String = username ?? current?.username ?? ""
+        let newFullname: String? = fullname ?? current?.fullname
+        let newPassword: String = password ?? current?.password ?? ""
+        let newGroups: [String] = current?.groups ?? ["wheel"]
+        flow.config.user = InstallConfig.UserSpec(
+            username: newUsername,
+            fullname: newFullname,
+            password: newPassword,
+            groups: newGroups)
     }
 }

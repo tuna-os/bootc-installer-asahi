@@ -54,7 +54,13 @@ final class ScreenshotCaptureTests: XCTestCase {
         // Touching NSApplication.shared is what creates the connection AppKit
         // needs before any NSWindow can be made. Without it the first window
         // construction traps rather than returning nil.
-        _ = NSApplication.shared
+        // Not just NSApplication.shared: controls draw in their INACTIVE
+        // appearance unless the app is frontmost, which makes an enabled
+        // primary button look disabled in a user guide. This is best-effort —
+        // a test bundle may not be permitted to activate — and the capture is
+        // correct either way, so nothing asserts on it.
+        NSApplication.shared.setActivationPolicy(.regular)
+        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
     func testCaptureWalkthrough() throws {
@@ -92,7 +98,7 @@ final class ScreenshotCaptureTests: XCTestCase {
                 f.ink, 0.04,
                 "\(f.name): only \(pct(f.ink)) non-background — the page is blank")
             XCTAssertGreaterThan(
-                f.actionBar, 0.003,
+                f.actionBar, 0.02,
                 "\(f.name): the action bar is \(pct(f.actionBar)) drawn — the "
                     + "primary button is missing from the bottom bar")
         }
@@ -278,7 +284,8 @@ final class ScreenshotCaptureTests: XCTestCase {
         }
 
         var placeholder = 0, ink = 0, samples = 0
-        var barDrawn = 0, barSamples = 0
+        var barSamples = 0
+        var barLuma: [Int] = []
         // The action bar is the bottom ~11% of the page (14pt padding either
         // side of a large control, against a 640pt page).
         let barTop = Int(Double(h) * 0.89)
@@ -292,14 +299,30 @@ final class ScreenshotCaptureTests: XCTestCase {
                 if abs(r - 236) > 12 || abs(g - 236) > 12 || abs(b - 236) > 12 { ink += 1 }
                 if y >= barTop {
                     barSamples += 1
-                    // The bar's own material is near-white; a button — filled
-                    // accent blue, or bordered with a text label — is markedly
-                    // darker. An empty bar scores ~0.
-                    let luma = (30 * r + 59 * g + 11 * b) / 100
-                    if luma < 200 { barDrawn += 1 }
+                    barLuma.append((30 * r + 59 * g + 11 * b) / 100)
                 }
             }
         }
+
+        // Contrast against the bar's OWN background, not absolute darkness.
+        //
+        // The darkness version measured 0.00% on three screens and I read that
+        // as "the button is missing". The artifact says otherwise: the button
+        // is drawn, and 24% of the strip differs from its background. macOS
+        // renders a .borderedProminent button in a NON-ACTIVE app as pale grey
+        // with white text — every pixel of it above luma 200. The check was
+        // asserting the app was frontmost, which in a test bundle it is not.
+        //
+        // So: whatever colour the bar is, a control on it differs from it. An
+        // empty bar is uniform and scores ~0 regardless of appearance, active
+        // or inactive, light mode or dark.
+        var barBackground = 0
+        var histogram: [Int: Int] = [:]
+        for l in barLuma { histogram[l, default: 0] += 1 }
+        if let common = histogram.max(by: { $0.value < $1.value })?.key {
+            barBackground = common
+        }
+        let barDrawn = barLuma.filter { abs($0 - barBackground) > 6 }.count
 
         return Finding(
             name: name,

@@ -11,6 +11,11 @@ fields, lists, sliders — are the genuine AppKit controls the app uses. What is
 absent is window chrome: no title bar, and no vibrancy behind the bottom bar,
 because the capture covers the window's content view rather than the window.
 
+Two further caveats, both honest limits rather than bugs. The images are 1x
+(860x640) — the capture follows the CI runner's backing scale, which is not
+Retina. And controls may render in their *inactive* appearance, so an enabled
+primary button can look paler here than on your Mac.
+
 ## Before you start
 
 - An Apple Silicon Mac (M1 or M2). M3 and later are not supported by Asahi yet.

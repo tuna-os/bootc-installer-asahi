@@ -3,6 +3,20 @@ import SwiftUI
 struct OptionsView: View {
     @EnvironmentObject var flow: InstallFlowViewModel
     @State private var wifiSSID = ""
+    // Plaintext lives HERE, in the view, and never in the view model.
+    // InstallFlowViewModel outlives this screen and is what gets serialised
+    // into the E2E state report; a password parked on it is a password with
+    // more ways out of the process than it needs. The model only ever receives
+    // the $6$ hash, on Continue.
+    @State private var password = ""
+
+    /// Screenshot/preview seam. The password is view-local `@State` now, so a
+    /// fixture view model cannot reach it — and a documentation screenshot of
+    /// this screen with an empty password field and a disabled Continue button
+    /// would misrepresent the step it is supposed to explain.
+    init(previewPassword: String = "") {
+        _password = State(initialValue: previewPassword)
+    }
 
     var body: some View {
         WizardPage(
@@ -44,7 +58,7 @@ struct OptionsView: View {
                             .frame(maxWidth: 260)
                     }
                     LabeledContent("Password") {
-                        SecureField("Password", text: passwordBinding)
+                        SecureField("Password", text: $password)
                             .labelsHidden()
                             .textFieldStyle(.roundedBorder)
                             .frame(maxWidth: 260)
@@ -52,8 +66,9 @@ struct OptionsView: View {
                 } header: {
                     Text("Administrator account")
                 } footer: {
-                    Text("This account can use `sudo`. The password is hashed before "
-                         + "anything is written to disk.")
+                    Text("This account can use `sudo`. The password is hashed on this "
+                         + "Mac before anything is written to disk \u{2014} the file it "
+                         + "goes into is readable by anyone who has the machine.")
                 }
 
                 // Offering this control while the agent refuses encryption is
@@ -128,14 +143,31 @@ struct OptionsView: View {
                 // makes the config state what was decided instead of relying on
                 // both sides agreeing about the meaning of absence.
                 flow.config.encryption = .init(type: "none")
+                // Hash HERE rather than at write time. writeInstallConfig() is
+                // still unimplemented, and whoever implements it should find a
+                // config that already carries a $6$ hash rather than a plaintext
+                // password plus a comment asking them to remember. The agent
+                // refuses plaintext (#21), so forgetting would not be a silent
+                // weakness — it would be an install that fails at first boot,
+                // after the disk is already repartitioned.
+                updateUser(password: PasswordHash.hash(password))
                 if !wifiSSID.isEmpty {
                     flow.config.wifi = .init(ssid: wifiSSID)
                 }
                 flow.advanceToDiskSlider()
             }
             .primaryAction()
-            .disabled(flow.config.hostname.isEmpty)
+            .disabled(!isComplete)
         }
+    }
+
+    /// Every field the first-boot agent needs. An account with no password
+    /// would be a passwordless sudoer on a machine exposed to the network, so
+    /// it is a precondition rather than a warning.
+    private var isComplete: Bool {
+        !flow.config.hostname.isEmpty
+            && !(flow.config.user?.username ?? "").isEmpty
+            && !password.isEmpty
     }
 
     // Each field writes back through the whole UserSpec because InstallConfig's
@@ -154,12 +186,6 @@ struct OptionsView: View {
         )
     }
 
-    private var passwordBinding: Binding<String> {
-        Binding(
-            get: { flow.config.user?.password ?? "" },
-            set: { updateUser(password: $0) }
-        )
-    }
 
     private func updateUser(
         username: String? = nil,

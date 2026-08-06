@@ -86,7 +86,12 @@ jobs:
           done
           [ -s walkthrough.gif ] || { echo "::error::missing walkthrough.gif"; missing=1; }
           exit "$missing"
+      # if: always() because the audit step above FAILS when a screen renders
+      # wrong — which is exactly when someone needs to look at the picture. The
+      # first version skipped the upload on failure, so a capture bug could only
+      # be diagnosed from ratios with no way to see what they described.
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: gui-screenshots
           path: docs/screenshots/

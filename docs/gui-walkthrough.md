@@ -5,12 +5,16 @@ page is generated in CI from the real SwiftUI views by
 `ScreenshotCaptureTests` (see `.github/workflows/bootsahi-app-build.yml`), so
 it cannot drift from the app the way hand-taken screenshots do.
 
-**What these images are and are not.** They are rendered offscreen with
-SwiftUI's `ImageRenderer`, not photographed from a running window. So the
-window title bar, the vibrancy behind the bottom bar, and the macOS 26 Liquid
-Glass surfaces do not appear here — those are window-server effects. Treat
-these as accurate for layout, wording and content, and expect the real app to
-look slightly richer.
+**What these images are and are not.** They are captured from the real SwiftUI
+views hosted in an offscreen `NSWindow`, so the controls you see — buttons,
+fields, lists, sliders — are the genuine AppKit controls the app uses. What is
+absent is window chrome: no title bar, and no vibrancy behind the bottom bar,
+because the capture covers the window's content view rather than the window.
+
+Two further caveats, both honest limits rather than bugs. The images are 1x
+(860x640) — the capture follows the CI runner's backing scale, which is not
+Retina. And controls may render in their *inactive* appearance, so an enabled
+primary button can look paler here than on your Mac.
 
 ## Before you start
 

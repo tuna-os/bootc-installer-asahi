@@ -15,20 +15,26 @@ import UniformTypeIdentifiers
 /// one target that is already allowed to `@testable import` it and already runs
 /// in CI. The second is smaller and reuses a harness that demonstrably works.
 ///
-/// **Why `ImageRenderer` rather than launching the app and screenshotting it.**
-/// wootc captures its GTK apps under Xvfb, which has no macOS equivalent:
-/// AppKit needs a real window server, so a screenshot job would depend on the
-/// runner's GUI session, window focus and animation timing — three sources of
-/// flake that produce *plausible but wrong* images rather than clean failures.
-/// `ImageRenderer` draws the same SwiftUI tree deterministically, offscreen,
-/// with no window at all.
+/// **Why a real NSWindow rather than `ImageRenderer`.** The first version of
+/// this used `ImageRenderer`, on the reasoning that offscreen rendering avoids
+/// the window-server flake a screenshot job would have. That reasoning was
+/// wrong in a way the output made obvious and the CI check did not:
+/// `ImageRenderer` draws SwiftUI's own primitives fine — text, symbols, shapes,
+/// the CoreImage QR — but it cannot draw AppKit-backed CONTROLS. Buttons came
+/// out as the yellow/red "unsupported view" placeholder, and `Form`, `List`,
+/// `Slider` and `TextField` did not come out at all. The settings screen
+/// rendered as a title over an empty page, and the catalog screen was 57%
+/// placeholder block. Every published screenshot was missing the very controls
+/// a walkthrough exists to point at.
 ///
-/// The trade is honest and worth stating: `ImageRenderer` renders the view
-/// hierarchy, not the window. Title bar, vibrancy behind `.bar`, and the
-/// macOS 26 glass effect are all window-server effects and will not appear.
-/// These are screenshots of *layout, type and content*, which is what a
-/// walkthrough needs and what a design review can act on — not a pixel-exact
-/// portrait of the shipped window.
+/// So the views are hosted in an `NSHostingView` inside a real (never ordered
+/// on screen) `NSWindow`, and captured with `cacheDisplay(in:to:)`. The
+/// controls are then genuine NSViews in a genuine view hierarchy and draw
+/// themselves properly. It still needs no visible window, no focus and no
+/// timing guesswork.
+///
+/// What is still absent, honestly: the title bar and the vibrancy behind
+/// `.bar`, because those belong to window chrome the capture does not include.
 ///
 /// Writes nothing unless `BOOTSAHI_CAPTURE_DIR` is set, so a normal `swift
 /// test` stays a test run.
@@ -43,6 +49,20 @@ final class ScreenshotCaptureTests: XCTestCase {
 
     private static let size = CGSize(width: 860, height: 640)
 
+    override func setUp() {
+        super.setUp()
+        // Touching NSApplication.shared is what creates the connection AppKit
+        // needs before any NSWindow can be made. Without it the first window
+        // construction traps rather than returning nil.
+        // Not just NSApplication.shared: controls draw in their INACTIVE
+        // appearance unless the app is frontmost, which makes an enabled
+        // primary button look disabled in a user guide. This is best-effort —
+        // a test bundle may not be permitted to activate — and the capture is
+        // correct either way, so nothing asserts on it.
+        NSApplication.shared.setActivationPolicy(.regular)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
     func testCaptureWalkthrough() throws {
         guard let dir = ProcessInfo.processInfo.environment["BOOTSAHI_CAPTURE_DIR"] else {
             throw XCTSkip("BOOTSAHI_CAPTURE_DIR not set — capture is opt-in")
@@ -51,13 +71,36 @@ final class ScreenshotCaptureTests: XCTestCase {
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
         var frames: [CGImage] = []
+        var findings: [Finding] = []
         for shot in Self.shots() {
             let image = try XCTUnwrap(
                 render(shot.view),
-                "failed to render \(shot.name) — an ImageRenderer nil here means the "
-                    + "view tree could not be laid out at \(Self.size)")
+                "failed to render \(shot.name) — a nil here means AppKit could not "
+                    + "produce a bitmap for the hosting view at \(Self.size)")
+            findings.append(audit(image, name: shot.name))
             try writePNG(image, to: out.appendingPathComponent("\(shot.name).png"))
             frames.append(image)
+        }
+
+        // Report every screen before asserting. Failing fast on the first one
+        // hid the other five last time, which cost a whole CI round to learn
+        // something the same run already knew.
+        for f in findings {
+            print("  \(f.name): placeholder \(pct(f.placeholder))  "
+                  + "ink \(pct(f.ink))  actionBar \(pct(f.actionBar))")
+        }
+        for f in findings {
+            XCTAssertLessThan(
+                f.placeholder, 0.0025,
+                "\(f.name): \(pct(f.placeholder)) SwiftUI \"unsupported view\" "
+                    + "placeholder — a control failed to draw")
+            XCTAssertGreaterThan(
+                f.ink, 0.04,
+                "\(f.name): only \(pct(f.ink)) non-background — the page is blank")
+            XCTAssertGreaterThan(
+                f.actionBar, 0.02,
+                "\(f.name): the action bar is \(pct(f.actionBar)) drawn — the "
+                    + "primary button is missing from the bottom bar")
         }
 
         XCTAssertEqual(
@@ -165,21 +208,131 @@ final class ScreenshotCaptureTests: XCTestCase {
     // MARK: - Rendering
 
     private func render(_ view: AnyView) -> CGImage? {
-        let renderer = ImageRenderer(
-            content: view
-                .frame(width: Self.size.width, height: Self.size.height)
-                // Without an explicit background the render is transparent, which
-                // reads as a black rectangle in most Markdown viewers' dark mode
-                // and as ragged edges in light. Ask for the real window colour.
-                .background(Color(nsColor: .windowBackgroundColor)))
-        // Retina: the screenshots are viewed on the machines this app targets.
-        renderer.scale = 2
-        return renderer.cgImage
+        let content = view
+            .frame(width: Self.size.width, height: Self.size.height)
+            .background(Color(nsColor: .windowBackgroundColor))
+
+        let host = NSHostingView(rootView: AnyView(content))
+        host.frame = NSRect(origin: .zero, size: Self.size)
+
+        // A real window, never ordered on screen. AppKit controls need to be in
+        // a window's view hierarchy to draw — that is precisely what
+        // ImageRenderer could not give them — but they do NOT need that window
+        // to be visible, focused, or on any display.
+        let window = NSWindow(
+            contentRect: host.frame,
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false)
+        window.contentView = host
+        // Key status matters for how CONTROLS draw, not just for input focus:
+        // AppKit renders a non-key window's controls in their inactive
+        // appearance. The measured symptom was actionBar 0.00% on exactly the
+        // three screens whose primary button is .borderedProminent, while the
+        // .bordered buttons on 04/05 drew fine — consistent with the prominent
+        // style falling back to a near-background inactive fill rather than
+        // accent blue.
+        window.makeKeyAndOrderFront(nil)
+        host.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+            return nil
+        }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        return rep.cgImage
+    }
+
+    struct Finding {
+        let name: String
+        /// Fraction that is SwiftUI's "unsupported view" marker.
+        let placeholder: Double
+        /// Fraction that is not the window background.
+        let ink: Double
+        /// Fraction of the bottom action bar that is drawn on — i.e. a button.
+        let actionBar: Double
+    }
+
+    private func pct(_ v: Double) -> String { String(format: "%.2f%%", v * 100) }
+
+    /// Measures a rendered screen. Assertions live at the call site so that all
+    /// six are reported together.
+    ///
+    /// **Why `ink` is only a blank-page floor.** The first version of this
+    /// asserted ink > 12% as a proxy for "the body rendered". It is not one.
+    /// Measured on this repo's own output, the BROKEN `01-welcome` scored
+    /// 10.85% and the FIXED one 11.05% — indistinguishable — while the broken
+    /// `03-settings`, which rendered nothing but a header, scored 9.30%, BELOW
+    /// the working `01-welcome`. Screen densities differ more than breakage
+    /// does, so a single global ink threshold cannot separate them. It is kept
+    /// only as a floor for a catastrophically empty page.
+    ///
+    /// The two checks that DO discriminate are the placeholder fraction, which
+    /// is zero unless a view failed to draw, and the action bar, which is
+    /// blank unless the primary button rendered. Those test the actual
+    /// regression rather than a correlate of it.
+    private func audit(_ image: CGImage, name: String) -> Finding {
+        let w = image.width, h = image.height
+        var data = [UInt8](repeating: 0, count: w * h * 4)
+        data.withUnsafeMutableBytes { buf in
+            guard let ctx = CGContext(
+                data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return }
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        }
+
+        var placeholder = 0, ink = 0, samples = 0
+        var barSamples = 0
+        var barLuma: [Int] = []
+        // The action bar is the bottom ~11% of the page (14pt padding either
+        // side of a large control, against a 640pt page).
+        let barTop = Int(Double(h) * 0.89)
+
+        for y in stride(from: 0, to: h, by: 3) {
+            for x in stride(from: 0, to: w, by: 3) {
+                let i = (y * w + x) * 4
+                let r = Int(data[i]), g = Int(data[i + 1]), b = Int(data[i + 2])
+                samples += 1
+                if r > 230, g > 170, g < 225, b < 70 { placeholder += 1 }
+                if abs(r - 236) > 12 || abs(g - 236) > 12 || abs(b - 236) > 12 { ink += 1 }
+                if y >= barTop {
+                    barSamples += 1
+                    barLuma.append((30 * r + 59 * g + 11 * b) / 100)
+                }
+            }
+        }
+
+        // Contrast against the bar's OWN background, not absolute darkness.
+        //
+        // The darkness version measured 0.00% on three screens and I read that
+        // as "the button is missing". The artifact says otherwise: the button
+        // is drawn, and 24% of the strip differs from its background. macOS
+        // renders a .borderedProminent button in a NON-ACTIVE app as pale grey
+        // with white text — every pixel of it above luma 200. The check was
+        // asserting the app was frontmost, which in a test bundle it is not.
+        //
+        // So: whatever colour the bar is, a control on it differs from it. An
+        // empty bar is uniform and scores ~0 regardless of appearance, active
+        // or inactive, light mode or dark.
+        var barBackground = 0
+        var histogram: [Int: Int] = [:]
+        for l in barLuma { histogram[l, default: 0] += 1 }
+        if let common = histogram.max(by: { $0.value < $1.value })?.key {
+            barBackground = common
+        }
+        let barDrawn = barLuma.filter { abs($0 - barBackground) > 6 }.count
+
+        return Finding(
+            name: name,
+            placeholder: Double(placeholder) / Double(max(samples, 1)),
+            ink: Double(ink) / Double(max(samples, 1)),
+            actionBar: Double(barDrawn) / Double(max(barSamples, 1)))
     }
 
     private func writePNG(_ image: CGImage, to url: URL) throws {
         let rep = NSBitmapImageRep(cgImage: image)
-        rep.size = Self.size
         guard let data = rep.representation(using: .png, properties: [:]) else {
             throw CaptureError.encodingFailed(url.lastPathComponent)
         }

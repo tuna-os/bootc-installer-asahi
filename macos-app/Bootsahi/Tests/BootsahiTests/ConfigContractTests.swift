@@ -159,6 +159,33 @@ final class ConfigContractTests: XCTestCase {
             text.contains("passphrase"), "encryption.passphrase reappeared in the model")
     }
 
+    /// The agent refuses a config whose `user.password` is not already a crypt
+    /// hash, so this is not a style preference — an unhashed password is an
+    /// install that dies at first boot, after the disk has been repartitioned.
+    ///
+    /// Checks the SHAPE the agent checks (a `$` prefix, which is also how
+    /// fisherman picks `chpasswd -e`) rather than re-deriving the hash, because
+    /// the value is salted and therefore different every run.
+    func testAPasswordEnteringTheConfigIsAlreadyHashed() throws {
+        let typed = "hunter2"
+        var config = maximalConfig()
+        config.user = .init(
+            username: "j", fullname: nil,
+            password: PasswordHash.hash(typed), groups: ["wheel"])
+
+        let emitted = try encodedKeys(config)
+        let user = try XCTUnwrap(emitted["user"] as? [String: Any])
+        let password = try XCTUnwrap(user["password"] as? String)
+
+        XCTAssertTrue(
+            PasswordHash.isCryptHash(password),
+            "the agent refuses a config whose password is not a crypt hash")
+        XCTAssertTrue(password.hasPrefix("$6$"), "expected SHA-512 crypt, got \(password)")
+        XCTAssertFalse(
+            password.contains(typed),
+            "the typed password survived into the config that goes to the ESP")
+    }
+
     /// The schema pins `additionalProperties: false` on the two objects that
     /// carry secrets in every naive design. If that ever relaxes, the agent
     /// stops being able to tell "SSID only" from "SSID plus PSK" — and the

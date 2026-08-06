@@ -92,8 +92,12 @@ final class ScreenshotCaptureTests: XCTestCase {
             targetImgref: "ghcr.io/tuna-os/bonito:gnome-asahi",
             rootPartition: "", espPartition: "",
             filesystem: "ext4", hostname: "seans-air")
+        // A hash, not a typed password: the model only ever holds the $6$ form
+        // (see InstallConfig.UserSpec), so a plaintext fixture would document a
+        // state the app cannot actually be in.
         configured.user = .init(username: "sean", fullname: "Sean",
-                                password: "hunter2", groups: ["wheel"])
+                                password: PasswordHash.hash("correct horse battery"),
+                                groups: ["wheel"])
 
         // A believable APFS split on a 512 GB Mac: the numbers are what the
         // reader checks first, so round, plausible ones matter more here than
@@ -134,7 +138,7 @@ final class ScreenshotCaptureTests: XCTestCase {
 
             Shot(name: "03-settings",
                  caption: "Account, computer name and Wi-Fi network.",
-                 view: AnyView(OptionsView()
+                 view: AnyView(OptionsView(previewPassword: "correct horse battery")
                     .environmentObject(InstallFlowViewModel.fixture(
                         step: .options, config: configured)))),
 

@@ -219,6 +219,14 @@ final class ScreenshotCaptureTests: XCTestCase {
             backing: .buffered,
             defer: false)
         window.contentView = host
+        // Key status matters for how CONTROLS draw, not just for input focus:
+        // AppKit renders a non-key window's controls in their inactive
+        // appearance. The measured symptom was actionBar 0.00% on exactly the
+        // three screens whose primary button is .borderedProminent, while the
+        // .bordered buttons on 04/05 drew fine — consistent with the prominent
+        // style falling back to a near-background inactive fill rather than
+        // accent blue.
+        window.makeKeyAndOrderFront(nil)
         host.layoutSubtreeIfNeeded()
         window.displayIfNeeded()
 

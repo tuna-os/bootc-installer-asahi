@@ -65,14 +65,36 @@ final class ScreenshotCaptureTests: XCTestCase {
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
         var frames: [CGImage] = []
+        var findings: [Finding] = []
         for shot in Self.shots() {
             let image = try XCTUnwrap(
                 render(shot.view),
-                "failed to render \(shot.name) — an ImageRenderer nil here means the "
-                    + "view tree could not be laid out at \(Self.size)")
-            try audit(image, name: shot.name)
+                "failed to render \(shot.name) — a nil here means AppKit could not "
+                    + "produce a bitmap for the hosting view at \(Self.size)")
+            findings.append(audit(image, name: shot.name))
             try writePNG(image, to: out.appendingPathComponent("\(shot.name).png"))
             frames.append(image)
+        }
+
+        // Report every screen before asserting. Failing fast on the first one
+        // hid the other five last time, which cost a whole CI round to learn
+        // something the same run already knew.
+        for f in findings {
+            print("  \(f.name): placeholder \(pct(f.placeholder))  "
+                  + "ink \(pct(f.ink))  actionBar \(pct(f.actionBar))")
+        }
+        for f in findings {
+            XCTAssertLessThan(
+                f.placeholder, 0.0025,
+                "\(f.name): \(pct(f.placeholder)) SwiftUI \"unsupported view\" "
+                    + "placeholder — a control failed to draw")
+            XCTAssertGreaterThan(
+                f.ink, 0.04,
+                "\(f.name): only \(pct(f.ink)) non-background — the page is blank")
+            XCTAssertGreaterThan(
+                f.actionBar, 0.003,
+                "\(f.name): the action bar is \(pct(f.actionBar)) drawn — the "
+                    + "primary button is missing from the bottom bar")
         }
 
         XCTAssertEqual(
@@ -207,64 +229,75 @@ final class ScreenshotCaptureTests: XCTestCase {
         return rep.cgImage
     }
 
-    /// Fails the capture when a screen did not really render.
+    struct Finding {
+        let name: String
+        /// Fraction that is SwiftUI's "unsupported view" marker.
+        let placeholder: Double
+        /// Fraction that is not the window background.
+        let ink: Double
+        /// Fraction of the bottom action bar that is drawn on — i.e. a button.
+        let actionBar: Double
+    }
+
+    private func pct(_ v: Double) -> String { String(format: "%.2f%%", v * 100) }
+
+    /// Measures a rendered screen. Assertions live at the call site so that all
+    /// six are reported together.
     ///
-    /// The previous check asked whether the PNG files existed and were
-    /// non-empty. They did and they were — while showing a blank settings page
-    /// and a catalog screen that was more than half "unsupported view"
-    /// placeholder. Existence was the wrong question; it is exactly the shape
-    /// of bug this rig was built to catch, reintroduced by the rig itself.
+    /// **Why `ink` is only a blank-page floor.** The first version of this
+    /// asserted ink > 12% as a proxy for "the body rendered". It is not one.
+    /// Measured on this repo's own output, the BROKEN `01-welcome` scored
+    /// 10.85% and the FIXED one 11.05% — indistinguishable — while the broken
+    /// `03-settings`, which rendered nothing but a header, scored 9.30%, BELOW
+    /// the working `01-welcome`. Screen densities differ more than breakage
+    /// does, so a single global ink threshold cannot separate them. It is kept
+    /// only as a floor for a catastrophically empty page.
     ///
-    /// So: look at the pixels.
-    private func audit(_ image: CGImage, name: String) throws {
+    /// The two checks that DO discriminate are the placeholder fraction, which
+    /// is zero unless a view failed to draw, and the action bar, which is
+    /// blank unless the primary button rendered. Those test the actual
+    /// regression rather than a correlate of it.
+    private func audit(_ image: CGImage, name: String) -> Finding {
         let w = image.width, h = image.height
         var data = [UInt8](repeating: 0, count: w * h * 4)
-        let ok: Bool = data.withUnsafeMutableBytes { buf -> Bool in
+        data.withUnsafeMutableBytes { buf in
             guard let ctx = CGContext(
                 data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8,
                 bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-            else { return false }
+            else { return }
             ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
-            return true
-        }
-        guard ok else {
-            XCTFail("could not read pixels back for \(name)")
-            return
         }
 
-        var placeholder = 0
-        var ink = 0
-        var samples = 0
-        // Every 7th pixel: plenty for a ratio, and keeps the audit off the
-        // critical path of a CI job.
-        for i in stride(from: 0, to: w * h * 4, by: 4 * 7) {
-            let r = Int(data[i]), g = Int(data[i + 1]), b = Int(data[i + 2])
-            samples += 1
-            // SwiftUI's unsupported-view marker is a saturated yellow field.
-            if r > 230, g > 170, g < 225, b < 70 { placeholder += 1 }
-            // Anything that is not the window background counts as content.
-            if abs(r - 236) > 12 || abs(g - 236) > 12 || abs(b - 236) > 12 { ink += 1 }
+        var placeholder = 0, ink = 0, samples = 0
+        var barDrawn = 0, barSamples = 0
+        // The action bar is the bottom ~11% of the page (14pt padding either
+        // side of a large control, against a 640pt page).
+        let barTop = Int(Double(h) * 0.89)
+
+        for y in stride(from: 0, to: h, by: 3) {
+            for x in stride(from: 0, to: w, by: 3) {
+                let i = (y * w + x) * 4
+                let r = Int(data[i]), g = Int(data[i + 1]), b = Int(data[i + 2])
+                samples += 1
+                if r > 230, g > 170, g < 225, b < 70 { placeholder += 1 }
+                if abs(r - 236) > 12 || abs(g - 236) > 12 || abs(b - 236) > 12 { ink += 1 }
+                if y >= barTop {
+                    barSamples += 1
+                    // The bar's own material is near-white; a button — filled
+                    // accent blue, or bordered with a text label — is markedly
+                    // darker. An empty bar scores ~0.
+                    let luma = (30 * r + 59 * g + 11 * b) / 100
+                    if luma < 200 { barDrawn += 1 }
+                }
+            }
         }
 
-        let placeholderRatio = Double(placeholder) / Double(samples)
-        let inkRatio = Double(ink) / Double(samples)
-
-        // 0.25%: an orange warning glyph is far below this; a placeholder BLOCK
-        // standing in for a button is above it. Measured against the broken
-        // output, the smallest real placeholder was 0.50% and the largest
-        // legitimate orange icon well under 0.05%.
-        XCTAssertLessThan(
-            placeholderRatio, 0.0025,
-            "\(name) is \(Int(placeholderRatio * 100))% SwiftUI "
-                + "\"unsupported view\" placeholder — a control failed to draw")
-
-        // A screen whose body did not render still has its header, which is
-        // about 9% ink. Anything at or below that is a title over an empty page.
-        XCTAssertGreaterThan(
-            inkRatio, 0.12,
-            "\(name) is only \(Int(inkRatio * 100))% non-background — the body "
-                + "of the screen is missing, not merely sparse")
+        return Finding(
+            name: name,
+            placeholder: Double(placeholder) / Double(max(samples, 1)),
+            ink: Double(ink) / Double(max(samples, 1)),
+            actionBar: Double(barDrawn) / Double(max(barSamples, 1)))
     }
 
     private func writePNG(_ image: CGImage, to url: URL) throws {

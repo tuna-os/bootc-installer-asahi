@@ -58,7 +58,7 @@ sources without changing the macOS application.
 
 Apple's Broadcom firmware may not be redistributed. Therefore it is not part
 of a public TunaOS image, release asset, or registry layer. On macOS the
-legacy flow extracts the firmware from that Mac and places the encrypted,
+legacy flow extracts the firmware from that Mac and places a local,
 per-install hand-off on the installer media/EFI partition. The T2 bootstrap
 consumes it once, installs it into the target deployment, then removes the
 handoff. The user may choose Ethernet or USB tethering instead; in that case

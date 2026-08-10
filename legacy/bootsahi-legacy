@@ -1,0 +1,56 @@
+#!/bin/bash
+# bootsahi-legacy — non-destructive compatibility preflight for Intel/T2 Macs.
+#
+# This intentionally does not repartition disks or alter Startup Security.
+# The installer UI invokes it before offering the legacy USB migration flow.
+set -euo pipefail
+
+min_macos="10.15"
+model="$(/usr/sbin/sysctl -n hw.model)"
+macos="$(/usr/bin/sw_vers -productVersion)"
+
+version_at_least() {
+  local actual="$1" required="$2"
+  local IFS=.
+  local -a a=($actual) b=($required)
+  local i
+  for i in 0 1 2; do
+    local av="${a[i]:-0}" bv="${b[i]:-0}"
+    ((10#$av > 10#$bv)) && return 0
+    ((10#$av < 10#$bv)) && return 1
+  done
+  return 0
+}
+
+is_t2_model() {
+  case "$1" in
+    iMacPro1,1|MacBookAir8,1|MacBookAir8,2|MacBookPro15,1|MacBookPro15,2|MacBookPro15,3|MacBookPro15,4|MacBookPro16,1|MacBookPro16,2|MacBookPro16,3|MacBookPro16,4|Macmini8,1|MacPro7,1)
+      return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+status="supported"
+reason=""
+if ! version_at_least "$macos" "$min_macos"; then
+  status="unsupported"
+  reason="Bootsahi Legacy requires macOS 10.15 Catalina or newer."
+elif ! is_t2_model "$model"; then
+  status="unsupported"
+  reason="This Mac model is not in the supported Intel/T2 set."
+fi
+
+if [[ "${1:-}" == "--json" ]]; then
+  printf '{"status":"%s","model":"%s","macos":"%s","minimum_macos":"%s","reason":"%s"}\n' \
+    "$status" "$model" "$macos" "$min_macos" "$reason"
+else
+  printf 'Bootsahi Legacy preflight\n'
+  printf '  Model: %s\n  macOS: %s\n' "$model" "$macos"
+  if [[ "$status" == "supported" ]]; then
+    printf '  Result: supported Intel/T2 Mac\n'
+    printf '\nNext: prepare the T2 firmware hand-off and boot the signed TunaOS T2 installer USB.\n'
+  else
+    printf '  Result: unsupported — %s\n' "$reason" >&2
+    exit 1
+  fi
+fi

@@ -1,6 +1,6 @@
-# Bootsahi Legacy — Intel/T2 macOS-to-Linux design
+# Bootsahi Legacy — Intel Mac macOS-to-Linux design
 
-Bootsahi Legacy is the Intel/T2 companion to Bootsahi's Apple-Silicon path.
+Bootsahi Legacy is the Intel-Mac companion to Bootsahi's Apple-Silicon path.
 It deliberately has a different host boundary: a T2 Mac can be stranded on
 macOS Catalina, Big Sur, Monterey, Ventura, or later, while the Apple-Silicon
 app requires macOS 13. Legacy therefore supports **macOS 10.15 Catalina and
@@ -8,7 +8,7 @@ newer** and uses only Foundation/POSIX facilities available on that floor.
 
 ## Scope
 
-Supported hardware is the complete T2 Mac set:
+All Intel Macs on the supported macOS floor are accepted. T2 Macs select the dedicated `t2` image profile; earlier Intel Macs select the generic x86_64 profile.\n\nThe recognized T2 set is:
 
 - iMac Pro (2017): `iMacPro1,1`
 - MacBook Air (2018–2020): `MacBookAir8,1`, `MacBookAir8,2`
@@ -22,7 +22,7 @@ profile to unsupported hardware.
 ## Migration flow
 
 ```
-macOS 10.15+ preflight
+macOS 10.13+ preflight
   -> verify supported T2 model and a backup/recovery plan
   -> extract Apple Broadcom firmware locally from the installed macOS volume
   -> write a signed x86_64 TunaOS T2 installer USB
@@ -37,7 +37,7 @@ running a preflight.
 
 ## Image contract
 
-Every offered `*-t2` bootc image must pass the T2 hardware gate before it
+Every offered `*-t2` bootc image must pass the T2 hardware gate; generic Intel images keep their normal hardware gate before it
 appears in the legacy catalog. The gate verifies:
 
 1. x86_64 UEFI boot and the T2 kernel/driver stack (keyboard, trackpad,
@@ -72,4 +72,4 @@ macOS/recovery partition until the T2 image has completed its hardware check.
 
 `legacy/bootsahi-legacy` is the Catalina-compatible, non-destructive
 preflight entry point. `--json` is stable UI input; its result is
-`supported` only for the model identifiers above and macOS >= 10.15.
+`supported` for Intel Macs on macOS >= 10.13; it emits either `generic-intel` or `t2`.

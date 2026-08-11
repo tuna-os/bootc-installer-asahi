@@ -45,7 +45,7 @@ consume harness results, not just tag enumeration
 - [x] D1 first-boot fisherman agent config (`install-config.json` → unattended `bootc install`)
 - [x] D2 asahi-installer `--json` machine mode (upstreamable)
 - [ ] D3 macOS app (SwiftUI, wraps the asahi-installer Python backend)
-- [ ] D4 recoveryOS walkthrough UX, LUKS, Wi-Fi handoff
+- [x] D4 recoveryOS walkthrough UX, LUKS, Wi-Fi handoff (RecoveryWalkthroughView QR & instructions; LUKS fail-closed #20/#47; Wi-Fi prompt at first boot #46)
 
 ### What's tested and what it proves
 

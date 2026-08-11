@@ -120,21 +120,29 @@ final class ScreenshotCaptureTests: XCTestCase {
                 CatalogEntry(variant: "bonito", desktop: "GNOME", stream: "stable",
                              imgref: "ghcr.io/tuna-os/bonito:gnome-asahi",
                              description: "TunaOS with the GNOME desktop. The default, "
-                                        + "and the best-tested combination."),
+                                        + "and the best-tested combination.",
+                             cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
+                             cosignIssuer: "https://token.actions.githubusercontent.com"),
                 CatalogEntry(variant: "dakota", desktop: "KDE Plasma", stream: "stable",
                              imgref: "ghcr.io/tuna-os/dakota:kde-asahi",
                              description: "TunaOS with KDE Plasma, for a more "
-                                        + "customisable desktop."),
+                                        + "customisable desktop.",
+                             cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
+                             cosignIssuer: "https://token.actions.githubusercontent.com"),
                 CatalogEntry(variant: "bluefin", desktop: "GNOME", stream: "testing",
                              imgref: "ghcr.io/ublue-os/bluefin:asahi",
                              description: "Universal Blue's developer-focused image. "
-                                        + "Tracks upstream more closely."),
+                                        + "Tracks upstream more closely.",
+                             cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
+                             cosignIssuer: "https://token.actions.githubusercontent.com"),
             ])
 
         var configured = InstallConfig(
             targetImgref: "ghcr.io/tuna-os/bonito:gnome-asahi",
             rootPartition: "", espPartition: "",
-            filesystem: "ext4", hostname: "seans-air")
+            filesystem: "ext4", hostname: "seans-air",
+            cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
+            cosignIssuer: "https://token.actions.githubusercontent.com")
         // A hash, not a typed password: the model only ever holds the $6$ form
         // (see InstallConfig.UserSpec), so a plaintext fixture would document a
         // state the app cannot actually be in.

@@ -119,22 +119,22 @@ final class ScreenshotCaptureTests: XCTestCase {
             entries: [
                 CatalogEntry(variant: "bonito", desktop: "GNOME", stream: "stable",
                              imgref: "ghcr.io/tuna-os/bonito:gnome-asahi",
-                             cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
-                             cosignIssuer: "https://token.actions.githubusercontent.com",
                              description: "TunaOS with the GNOME desktop. The default, "
-                                        + "and the best-tested combination."),
+                                        + "and the best-tested combination.",
+                             cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
+                             cosignIssuer: "https://token.actions.githubusercontent.com"),
                 CatalogEntry(variant: "dakota", desktop: "KDE Plasma", stream: "stable",
                              imgref: "ghcr.io/tuna-os/dakota:kde-asahi",
-                             cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
-                             cosignIssuer: "https://token.actions.githubusercontent.com",
                              description: "TunaOS with KDE Plasma, for a more "
-                                        + "customisable desktop."),
+                                        + "customisable desktop.",
+                             cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
+                             cosignIssuer: "https://token.actions.githubusercontent.com"),
                 CatalogEntry(variant: "bluefin", desktop: "GNOME", stream: "testing",
                              imgref: "ghcr.io/ublue-os/bluefin:asahi",
-                             cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
-                             cosignIssuer: "https://token.actions.githubusercontent.com",
                              description: "Universal Blue's developer-focused image. "
-                                        + "Tracks upstream more closely."),
+                                        + "Tracks upstream more closely.",
+                             cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
+                             cosignIssuer: "https://token.actions.githubusercontent.com"),
             ])
 
         var configured = InstallConfig(

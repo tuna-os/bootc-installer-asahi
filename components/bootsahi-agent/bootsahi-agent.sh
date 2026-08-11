@@ -502,7 +502,16 @@ resolve_role_device() {
 
 # gpt_type_of echoes the GPT partition type GUID of a partition, or nothing.
 gpt_type_of() {
-    blkid -s PART_ENTRY_TYPE -o value "$1" 2>/dev/null || true
+    # -p forces a low-level probe, bypassing blkid's cache: the selftest
+    # rewrites the GPT table with sgdisk between runs, and a cached
+    # PART_ENTRY_TYPE would report the OLD type and let a foreign partition
+    # through. Fall back to udev's view (lsblk) if the probe is blocked.
+    local t
+    t=$(blkid -p -s PART_ENTRY_TYPE -o value "$1" 2>/dev/null || true)
+    if [ -z "$t" ]; then
+        t=$(lsblk -rno PARTTYPE "$1" 2>/dev/null | head -1 || true)
+    fi
+    printf '%s\n' "$t"
 }
 
 # device_is_removable reports whether a block device is flagged as removable
@@ -688,6 +697,20 @@ main() {
         log "resolving install target from $stub (recorded PARTUUIDs)"
         TARGET_DEV=$(resolve_role_device "$stub" target) || exit 1
         ESP_DEV=$(resolve_role_device "$stub" esp) || exit 1
+
+        # The resolved target must not be the bootstrap partition itself. A
+        # swapped PARTUUID (target role claiming the bootstrap's UUID) would
+        # otherwise pass the type/mount checks whenever the bootstrap is not
+        # mounted (read-only media, selftest loop devices); refusing on device
+        # identity makes the swap impossible to miss (#22).
+        if jq -e '.partitions[]? | select(.role == "bootstrap")' "$stub" >/dev/null 2>&1; then
+            BOOTSTRAP_DEV=$(resolve_role_device "$stub" bootstrap) || BOOTSTRAP_DEV=""
+            if [ -n "$BOOTSTRAP_DEV" ] && [ "$(block_device_id "$TARGET_DEV")" = "$(block_device_id "$BOOTSTRAP_DEV")" ]; then
+                log "resolved target $TARGET_DEV is the bootstrap partition itself; refusing (swapped PARTUUID)"
+                exit 1
+            fi
+        fi
+
         if ! verify_target "$TARGET_DEV" "$ESP_DEV"; then
             exit 1
         fi

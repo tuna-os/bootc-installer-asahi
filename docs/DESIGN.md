@@ -142,3 +142,26 @@ Why this wins:
 - Does the bootstrap adopt fisherman as the first-boot agent directly, or a
   thin dedicated agent that calls bootc? (fisherman reuse keeps one installer
   brain across ISO and Asahi paths — my recommendation.)
+
+## Adopted RFC #6 Host-Driven Install Patterns
+
+See [issue #6](https://github.com/tuna-os/bootc-installer-asahi/issues/6) and [`UNIFIED-INSTALL-CONTRACT.md`](UNIFIED-INSTALL-CONTRACT.md) for full technical rationale.
+
+1. **Unified Install Contract (`install-config.json`):**
+   - Single JSON contract shared between macOS host app and first-boot agent.
+   - Hashed account passwords ($6$ crypt format) supported via `chpasswd -e`.
+   - Wi-Fi credentials and LUKS passphrases are never stored in plaintext on the ESP.
+   - Partition device paths are resolved at runtime via PARTUUID/role (per ADR 0001) rather than hardcoded by the host app.
+
+2. **Drive-Mode E2E Testing (`TUNADIVE_E2E_DRIVE=1`):**
+   - Framework-agnostic UI automation seam for the SwiftUI app without accessibility bus dependencies.
+   - Directive polling (`/tmp/tuna-dive-e2e-drive.json`) and state snapshot reporting (`/tmp/tuna-dive-e2e-drive-state.json`).
+
+3. **macOS User Data Bridge (Architecture Direction):**
+   - Reverses wootc's Linux-driven bind mount pattern due to Apple Silicon hardware encryption and lack of APFS driver in Linux.
+   - Extraction occurs natively on the macOS host app before rebooting.
+   - Reuses wootc's catalog, consent-tiering (`migration-selection.json`), and non-secret identity extraction (`wootc-identity`).
+
+4. **Evidence & Quality Discipline:**
+   - Green-only evidence requirement for published walkthroughs and screenshots.
+   - CI-enforced regression tests across payload, agent, and backend contracts.

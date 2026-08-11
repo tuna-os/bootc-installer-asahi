@@ -79,7 +79,7 @@ if [ -d "$OSROOT/usr/lib/modules" ]; then
 	# Select the Asahi kernel by the marker the producer uses: presence of
 	# Apple devicetrees (dtb/apple/). A newer-version leftover generic
 	# kernel without that marker is not the right choice (issue #28).
-	KVER=$(for d in "$OSROOT/usr/lib/modules"/*/dtb/apple; do [ -d "$d" ] && dirname "$d" | xargs basename; done | sort -V | tail -1)
+	KVER=$(for kd in "$OSROOT/usr/lib/modules"/*; do [ -d "$kd/dtb/apple" ] && basename "$kd"; done | sort -V | tail -1)
 	if [ -z "$KVER" ]; then
 		bad "no Asahi kernel found (no dtb/apple/ in any /usr/lib/modules/*)"
 	else

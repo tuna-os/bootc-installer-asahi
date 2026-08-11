@@ -94,7 +94,7 @@ if [ ! -f "$WORK/esp/m1n1/boot.bin" ]; then
     for c in usr/share/uboot/apple_m1/u-boot-nodtb.bin usr/lib/u-boot-asahi/u-boot-nodtb.bin usr/lib/u-boot/apple_m1/u-boot-nodtb.bin usr/lib/asahi-boot/u-boot-nodtb.bin usr/lib/asahi-boot/u-boot.bin; do
         [ -f "$MNT/$c" ] && UBOOT_BIN="$MNT/$c" && break
     done
-    KVER=$(for d in "$MNT/usr/lib/modules"/*/dtb/apple; do [ -d "$d" ] && dirname "$d" | xargs basename; done | sort -V | tail -1)
+    KVER=$(for kd in "$MNT/usr/lib/modules"/*; do [ -d "$kd/dtb/apple" ] && basename "$kd"; done | sort -V | tail -1)
     [ -n "$KVER" ] || { echo "ERROR: no Asahi kernel found (no dtb/apple/ in any /usr/lib/modules/*)" >&2; exit 1; }
     echo "==> Selected Asahi kernel: $KVER"
     DTBS=$(find "$MNT/usr/lib/modules/$KVER/dtb/apple" -name '*.dtb' 2>/dev/null | sort)

@@ -30,7 +30,7 @@ uboot_bin=""
 for c in /usr/share/uboot/apple_m1/u-boot-nodtb.bin /usr/lib/u-boot-asahi/u-boot-nodtb.bin /usr/lib/u-boot/apple_m1/u-boot-nodtb.bin /usr/lib/asahi-boot/u-boot-nodtb.bin /usr/lib/asahi-boot/u-boot.bin; do
     [ -f "$c" ] && uboot_bin="$c" && break
 done
-kver=$(for d in /usr/lib/modules/*/dtb/apple; do [ -d "$d" ] && dirname "$d" | xargs basename; done | sort -V | tail -1)
+kver=$(for kd in /usr/lib/modules/*; do [ -d "$kd/dtb/apple" ] && basename "$kd"; done | sort -V | tail -1)
 if [ -z "$kver" ]; then
     echo "asahi-bootbin-sync: no Asahi kernel found (no dtb/apple/ in any /usr/lib/modules/*); skipping"
     exit 0

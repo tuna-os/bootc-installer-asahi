@@ -1,18 +1,20 @@
 # Hardware/Mac testing checklist
 
-> ## 🛑 No destructive hardware install until #19–#24 and #26–#27 are resolved
+> ## 🛑 No destructive Mac hardware install until the remaining hardware gate is cleared
 >
 > James's call, 2026-07-25. Non-destructive steps (0–3: build, launch, protocol
-> round trips) are fine and several are already green. Anything that writes a
-> partition table or runs fisherman against a real disk waits on that set.
+> round trips) are fine and several are already green. The D1 contract,
+> three-partition layout, bootstrap image, and disposable-loop install gates
+> are implemented; anything that writes a real Mac partition table still waits
+> for hardware review.
 >
 > Current state of the gate:
 >
 > | Issue | Subject | State |
 > |---|---|---|
-> | [#19](https://github.com/tuna-os/bootc-installer-asahi/issues/19) | D1 cannot format the root it runs from | **decided + implemented** ([ADR 0001](adr/0001-bootstrap-partition-layout.md)); real-fisherman run still open (#26) |
+> | [#19](https://github.com/tuna-os/bootc-installer-asahi/issues/19) | D1 cannot format the root it runs from | **decided + implemented** ([ADR 0001](adr/0001-bootstrap-partition-layout.md)); disposable real-fisherman install is green |
 > | [#20](https://github.com/tuna-os/bootc-installer-asahi/issues/20) | LUKS silently skipped in manual path | **fails closed** (#29); real support open |
-> | [#21](https://github.com/tuna-os/bootc-installer-asahi/issues/21) | Secrets persist on ESP; cleanup not failure-safe | **partly fixed** (#18, #29); one-shot secret channel open |
+> | [#21](https://github.com/tuna-os/bootc-installer-asahi/issues/21) | Secrets persist on ESP; cleanup not failure-safe | **agent refuses stored secrets; derived secrets are cleaned; retry intent remains on failure** |
 > | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | **mostly** — see the caveat below |
 > | [#23](https://github.com/tuna-os/bootc-installer-asahi/issues/23) | Both units never started | **fixed** (#29) |
 > | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | **fails closed now** — a missing or half policy is refused, and the install deploys the digest cosign verified rather than the tag. Catalog-side trust policy still to come |
@@ -168,13 +170,8 @@ the real `python3` + `main.py` from step 2, and confirm the app's own log
 view shows the same messages/asks step 2 produced manually, and that
 clicking through actually sends working answers back.
 
-## 4. The real gap: install-config.json handoff
-**Delivery mechanism designed; partition layout still undecided — and the
-recipe is NOT yet safe to run against a real disk.** Under the current
-two-partition payload, the only Linux partition is the one the agent runs
-from, and fisherman would `mkfs` it mid-install. Do not attempt steps 5-6
-until the A/B decision below is made and `build_recipe`'s root mount is
-updated to match.
+## 4. The install-config.json handoff
+**The contract and partition handoff are implemented; real Mac hardware validation remains.** The bootstrap uses a separate fixed-size root and expanding target root, so fisherman never formats the filesystem it is running from.
 
 See the "handoff" section of
 [`docs/UNIFIED-INSTALL-CONTRACT.md`](UNIFIED-INSTALL-CONTRACT.md), written
@@ -189,21 +186,13 @@ Summary of the answers:
   partition as `disk0s5` while the agent sees `nvme0n1p5`, so an
   app-supplied device node cannot be correct even in principle.
 
-**One decision still blocks this step (and 5-6 behind it):** fisherman
-formats the partition it installs `/` onto, so the bootstrap cannot run
-from the target root — but `make-payload.sh` declares only two partitions
-(ESP + Root). LUKS makes this unavoidable rather than cosmetic: you cannot
-reformat the filesystem you are running from, so encryption is impossible
-under the current layout. Pick **A** (three partitions: ESP + small
-bootstrap root + expanding target root, the direct wootc Phase-2/Phase-3
-analog) or **B** (bootstrap runs from RAM as a live squashfs root). Details
-and the discarded option C are in that doc.
+The three-partition decision is **A** in [ADR 0001](adr/0001-bootstrap-partition-layout.md): ESP + fixed bootstrap root + expanding target root. The app writes intent only; backend facts are recorded in `stub_info.json`, and the agent resolves the `esp` and `target` roles by PARTUUID. `rootPartition` and `espPartition` remain accepted only as explicit dev/test overrides.
 
-## 5. D1 agent — dry run only, not on real hardware yet
+## 5. D1 agent — CI and disposable-disk validation
 `components/bootsahi-agent/bootsahi-agent.sh` is CI-tested
-(`test-agent.sh`, 8 assertions, all green) against generated shell stubs
-standing in for fisherman — never against a real `fisherman` binary or a
-real disk. The stubs are generated rather than borrowed from the host
+(`test-agent.sh`) against generated shell stubs and the real fisherman
+recipe/install path on a disposable loop disk. The stubs are generated rather
+than borrowed from the host
 because the suite originally used `/bin/true` and `/bin/false`, which do
 not exist on macOS (it has `/usr/bin/true`); that made both success-path
 assertions fail on a Mac for reasons unrelated to the agent, and made the

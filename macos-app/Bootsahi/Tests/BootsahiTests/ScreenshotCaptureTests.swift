@@ -142,7 +142,7 @@ final class ScreenshotCaptureTests: XCTestCase {
 
         var configured = InstallConfig(
             targetImgref: "ghcr.io/tuna-os/bonito:gnome-asahi",
-            rootPartition: "", espPartition: "",
+            rootPartition: nil, espPartition: nil,
             filesystem: "ext4", hostname: "seans-air",
             cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
             cosignIssuer: "https://token.actions.githubusercontent.com")

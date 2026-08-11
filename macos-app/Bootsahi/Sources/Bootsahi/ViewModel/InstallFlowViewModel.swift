@@ -10,11 +10,9 @@ import Combine
 /// installs the single "bootsahi-boot" bootstrap OS (per DESIGN.md's core
 /// idea: one bootstrap payload per architecture, not per variant), so it
 /// has no reason to know about variant/desktop/stream at all. Those choices
-/// only matter for install-config.json, written after the backend finishes
-/// creating the target partitions — see writeInstallConfig() below, which
-/// is a TODO: the exact handoff point (which ESP, which partition device
-/// names) depends on what the backend reports back, and that reporting
-/// contract doesn't exist yet. Flagged in README.md, not invented here.
+/// only matter for install-config.json. The backend owns partition facts; the
+/// Linux agent resolves them from PARTUUIDs recorded in stub_info.json, so the
+/// app deliberately emits no macOS device-node guesses.
 @MainActor
 final class InstallFlowViewModel: ObservableObject {
     enum Step: Equatable {
@@ -38,7 +36,7 @@ final class InstallFlowViewModel: ObservableObject {
     @Published var catalog: Catalog?
     @Published var selectedEntry: CatalogEntry?
     @Published var config = InstallConfig(
-        targetImgref: "", rootPartition: "", espPartition: "",
+        targetImgref: "", rootPartition: nil, espPartition: nil,
         filesystem: "btrfs", hostname: "")
 
     private var process: InstallerProcess?

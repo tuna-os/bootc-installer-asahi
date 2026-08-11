@@ -25,9 +25,14 @@ bootstrap boots ──▶ first-boot agent reads install-config.json
 ```
 
 Why this wins:
-- **Catalog = the registries.** The macOS app lists variants from a small
-  `catalog.json` (generated in CI from registry-map.yaml); new variants/tags
-  appear without touching the installer or payloads.
+- **Catalog = an allowlist of harness-verified refs.** The macOS app lists
+  variants from a small `catalog.json` (generated in CI from
+  registry-map.yaml, filtered through harness results per
+  tuna-os/tunaOS#910). Every entry carries a `verified` field; the app only
+  offers entries where it is `true`. New variants/tags appear only after
+  passing the Asahi golden-manifest harness — no unverified image is ever
+  offered, because a user picking one would complete the whole recoveryOS
+  blessing flow and end up with a Mac that does not boot (#41).
 - **The heavy download happens in Linux**, with bootc's resumable, layered,
   signed pulls — not as a giant zip over asahi-installer's plain HTTP.
 - **One artifact to maintain, test, and sign.** The bootstrap is small enough

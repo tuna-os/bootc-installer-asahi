@@ -1,5 +1,5 @@
 {
-  "generatedAt": "placeholder-not-CI-generated",
+  "generatedAt": "2026-07-30T14:16:41Z-manual-allowlist",
   "entries": [
     {
       "variant": "bonito",
@@ -8,7 +8,18 @@
       "imgref": "ghcr.io/tuna-os/bonito:gnome-asahi",
       "cosignIdentity": "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
       "cosignIssuer": "https://token.actions.githubusercontent.com",
-      "description": "Bonito with GNOME, Asahi build. Placeholder entry — catalog.json generation in CI (from registry-map.yaml) doesn't exist yet."
+      "description": "Bonito with GNOME, Asahi build.",
+      "verified": true
+    },
+    {
+      "variant": "grouper",
+      "desktop": "gnome",
+      "stream": "stable",
+      "imgref": "ghcr.io/tuna-os/grouper:gnome-asahi",
+      "cosignIdentity": "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
+      "cosignIssuer": "https://token.actions.githubusercontent.com",
+      "description": "Grouper with GNOME, Asahi build.",
+      "verified": true
     }
   ]
 }

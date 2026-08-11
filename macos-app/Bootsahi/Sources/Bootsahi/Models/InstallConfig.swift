@@ -87,6 +87,12 @@ struct CatalogEntry: Codable, Identifiable, Hashable {
     /// cosign OIDC issuer, paired with cosignIdentity (REQUIRED — a
     /// half-policy is refused exactly like a missing one).
     var cosignIssuer: String
+    /// Harness-verified gate (#41): only entries that have passed the Asahi
+    /// golden-manifest harness (tuna-os/tunaOS#910) are marked verified.
+    /// The catalog view refuses to offer unverified entries — a user must
+    /// never complete the recoveryOS blessing flow with an image that has
+    /// not been proven bootable on Apple hardware.
+    var verified: Bool
 }
 
 struct Catalog: Codable {

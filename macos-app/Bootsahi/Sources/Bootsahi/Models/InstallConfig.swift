@@ -73,6 +73,13 @@ struct CatalogEntry: Codable, Identifiable, Hashable {
     var stream: String      // e.g. "stable"
     var imgref: String       // e.g. "ghcr.io/tuna-os/bonito:gnome-asahi"
     var description: String
+    /// cosign certificate-identity (REQUIRED — the agent refuses a config
+    /// without it, and this struct is the only producer of such configs).
+    /// See issue #24.
+    var cosignIdentity: String
+    /// cosign OIDC issuer, paired with cosignIdentity (REQUIRED — a
+    /// half-policy is refused exactly like a missing one).
+    var cosignIssuer: String
 }
 
 struct Catalog: Codable {

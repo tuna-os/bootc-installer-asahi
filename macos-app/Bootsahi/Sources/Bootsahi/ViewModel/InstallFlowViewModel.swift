@@ -99,6 +99,8 @@ final class InstallFlowViewModel: ObservableObject {
     func advanceToOptions() {
         guard step == .catalog, let entry = selectedEntry else { return }
         config.targetImgref = entry.imgref
+        config.cosignIdentity = entry.cosignIdentity
+        config.cosignIssuer = entry.cosignIssuer
         step = .options
     }
 

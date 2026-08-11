@@ -27,6 +27,10 @@ on:
         description: "Minimum size (GB) of the expanding target partition the installed OS goes into"
         default: "12"
         type: string
+      upload_r2:
+        description: "Upload payload zip and installer_data.json to Cloudflare R2 (download.tunaos.org/asahi)"
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -89,6 +93,30 @@ jobs:
           path: out/
           retention-days: 14
 
-      # TODO(R2): rclone upload to download.tunaos.org/asahi once secrets are
-      # set (same pattern as the tunaOS ISO pipelines), then point a branded
-      # `curl | sh` bootstrap at the hosted installer_data.json.
+      - name: Upload payload to Cloudflare R2
+        if: inputs.upload_r2
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_REGION: auto
+          RCLONE_CONFIG_R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          PAYLOAD_NAME: ${{ inputs.name }}
+        run: |
+          if [[ -z "${R2_BUCKET}" ]]; then
+            echo "R2 secrets not configured — skipping publish"
+            exit 0
+          fi
+          ZIP="out/${PAYLOAD_NAME}.zip"
+          DATA="out/installer_data.json"
+          [[ -f "$ZIP" ]] || { echo "::error::Payload zip not found"; exit 1; }
+          [[ -f "$DATA" ]] || { echo "::error::installer_data.json not found"; exit 1; }
+          echo "==> Uploading payload ($ZIP and $DATA) to R2..."
+          rclone copy --log-level INFO --checksum --s3-no-check-bucket \
+            "$ZIP" "R2:${R2_BUCKET}/asahi/"
+          rclone copy --log-level INFO --checksum --s3-no-check-bucket \
+            "$DATA" "R2:${R2_BUCKET}/asahi/"
+          echo "==> Published payload to R2 bucket ${R2_BUCKET}/asahi/"
+

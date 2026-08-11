@@ -40,7 +40,7 @@ consume harness results, not just tag enumeration
 - [x] Design (docs/DESIGN.md)
 - [x] D0 scaffold: `scripts/make-payload.sh` + `build-payload.yml` — package
       any asahi-capable bootc image as an asahi-installer zip +
-      `installer_data.json` (artifact-only; R2 upload TODO)
+      `installer_data.json` (wired with R2 upload step for `download.tunaos.org/asahi`)
 - [x] D0 validated against a real asahi image (`bonito:gnome-asahi`, tunaOS#774)
 - [x] D1 first-boot fisherman agent config (`install-config.json` → unattended `bootc install`)
 - [x] D2 asahi-installer `--json` machine mode (upstreamable)

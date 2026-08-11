@@ -511,7 +511,10 @@ gpt_type_of() {
     if [ -z "$t" ]; then
         t=$(lsblk -rno PARTTYPE "$1" 2>/dev/null | head -1 || true)
     fi
-    printf '%s\n' "$t"
+    # Normalise to upper case: blkid -p reports GUIDs in lower case, and the
+    # is_*_partition_type comparisons are upper-case. A case mismatch here
+    # would refuse every valid Linux target (or accept every foreign one).
+    printf '%s\n' "${t^^}"
 }
 
 # device_is_removable reports whether a block device is flagged as removable

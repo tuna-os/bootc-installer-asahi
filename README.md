@@ -26,12 +26,14 @@ be read as "appears without being verified."
 
 As of 2026-07-30 only `bonito` and `grouper` pass (36/36 each); the other six
 promoted `*-asahi` tags would leave a Mac unbootable
-([tunaOS#776](https://github.com/tuna-os/tunaOS/issues/776)). Today's shipped
-`catalog.json` is a placeholder holding one hand-written entry — `bonito`,
-which is verified — so nothing unbootable is currently offered. The hazard is
-in the generator DESIGN.md calls for: enumerating `*-asahi` tags from
-registry-map.yaml would pull in all six. That gate is
-[#41](https://github.com/tuna-os/bootc-installer-asahi/issues/41).
+([tunaOS#776](https://github.com/tuna-os/tunaOS/issues/776)). The catalog
+is an explicit allowlist: every `CatalogEntry` carries a `verified` field
+(`false` by default), and the macOS app only offers entries where it is
+`true`. The shipped `catalog.json` includes both `bonito` and `grouper`,
+marked `verified: true`. Adding a new variant requires both the image and a
+passing harness sweep — the field is the gate, and CI generation must
+consume harness results, not just tag enumeration
+([#41](https://github.com/tuna-os/bootc-installer-asahi/issues/41)).
 
 ## Status
 

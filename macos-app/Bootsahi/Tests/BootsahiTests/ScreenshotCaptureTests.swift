@@ -122,19 +122,22 @@ final class ScreenshotCaptureTests: XCTestCase {
                              description: "TunaOS with the GNOME desktop. The default, "
                                         + "and the best-tested combination.",
                              cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
-                             cosignIssuer: "https://token.actions.githubusercontent.com"),
+                             cosignIssuer: "https://token.actions.githubusercontent.com",
+                             verified: true),
                 CatalogEntry(variant: "dakota", desktop: "KDE Plasma", stream: "stable",
                              imgref: "ghcr.io/tuna-os/dakota:kde-asahi",
                              description: "TunaOS with KDE Plasma, for a more "
                                         + "customisable desktop.",
                              cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
-                             cosignIssuer: "https://token.actions.githubusercontent.com"),
+                             cosignIssuer: "https://token.actions.githubusercontent.com",
+                             verified: true),
                 CatalogEntry(variant: "bluefin", desktop: "GNOME", stream: "testing",
                              imgref: "ghcr.io/ublue-os/bluefin:asahi",
                              description: "Universal Blue's developer-focused image. "
                                         + "Tracks upstream more closely.",
                              cosignIdentity: "https://github.com/tuna-os/.github/.github/workflows/image-build.yml@refs/heads/main",
-                             cosignIssuer: "https://token.actions.githubusercontent.com"),
+                             cosignIssuer: "https://token.actions.githubusercontent.com",
+                             verified: true),
             ])
 
         var configured = InstallConfig(

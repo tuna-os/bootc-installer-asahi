@@ -76,11 +76,15 @@ if [ ! -d "$R/usr/lib/modules" ]; then
 	[ -n "$moddir" ] && OSROOT="${moddir%/usr/lib/modules}"
 fi
 if [ -d "$OSROOT/usr/lib/modules" ]; then
-	KVER=$(ls "$OSROOT/usr/lib/modules" | sort -V | tail -1)
-	case "$KVER" in
-	*asahi* | *16k*) ok "asahi/16k kernel: $KVER" ;;
-	*) bad "kernel is not asahi/16k: $KVER" ;;
-	esac
+	# Select the Asahi kernel by the marker the producer uses: presence of
+	# Apple devicetrees (dtb/apple/). A newer-version leftover generic
+	# kernel without that marker is not the right choice (issue #28).
+	KVER=$(for d in "$OSROOT/usr/lib/modules"/*/dtb/apple; do [ -d "$d" ] && dirname "$d" | xargs basename; done | sort -V | tail -1)
+	if [ -z "$KVER" ]; then
+		bad "no Asahi kernel found (no dtb/apple/ in any /usr/lib/modules/*)"
+	else
+		ok "Asahi kernel selected: $KVER"
+	fi
 	M="$OSROOT/usr/lib/modules/$KVER"
 	[ -f "$M/vmlinuz" ] && ok "vmlinuz staged" || bad "vmlinuz missing"
 	[ -f "$M/initramfs.img" ] && ok "initramfs present" || bad "initramfs missing"

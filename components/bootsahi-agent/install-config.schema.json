@@ -6,8 +6,6 @@
   "type": "object",
   "required": [
     "targetImgref",
-    "rootPartition",
-    "espPartition",
     "filesystem",
     "hostname",
     "cosignIdentity",
@@ -20,11 +18,11 @@
     },
     "rootPartition": {
       "type": "string",
-      "description": "Block device for the root filesystem (e.g. /dev/nvme0n1p5). PROVISIONAL: per docs/UNIFIED-INSTALL-CONTRACT.md this field is slated to become a dev/test override rather than an app-supplied input. The macOS app cannot produce a correct value even in principle -- it knows the partition as 'disk0s5', while the agent sees 'nvme0n1p5' -- so the agent should resolve the target at runtime from a PARTUUID recorded by the backend. Still required today because how it resolves depends on an unsettled partition-layout decision (see that doc's 'fisherman formats /' section)."
+      "description": "DEV/TEST OVERRIDE ONLY. The agent resolves the install target at runtime from the backend-recorded PARTUUID in stub_info.json (issue #22). This field is honoured solely under BOOTSAHI_ALLOW_CONFIG_DEVICES=1, which the production bootstrap never sets. The macOS app cannot produce a correct value — it knows the partition as 'disk0s5', while the agent sees 'nvme0n1p5' — so any value this field carries on a real install is necessarily a guess. Not required in the schema because the agent refuses a config whose target it cannot resolve independently."
     },
     "espPartition": {
       "type": "string",
-      "description": "Block device for the EFI system partition shared with recoveryOS/m1n1 (e.g. /dev/nvme0n1p1). Same PROVISIONAL status as rootPartition. Note the agent always emits this mount with fstype 'unformatted': the ESP already holds m1n1/boot.bin and the non-redistributable on-device-extracted vendorfw/, so it must never be reformatted."
+      "description": "DEV/TEST OVERRIDE ONLY. Same status as rootPartition. Production installs resolve the ESP from stub_info.json's recorded PARTUUID. Note the agent always emits this mount with fstype 'unformatted': the ESP already holds m1n1/boot.bin and the non-redistributable on-device-extracted vendorfw/, so it must never be reformatted."
     },
     "filesystem": {
       "type": "string",

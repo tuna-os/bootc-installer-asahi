@@ -500,11 +500,48 @@ resolve_role_device() {
     return 0
 }
 
+# gpt_type_of echoes the GPT partition type GUID of a partition, or nothing.
+gpt_type_of() {
+    blkid -s PART_ENTRY_TYPE -o value "$1" 2>/dev/null || true
+}
+
+# device_is_removable reports whether a block device is flagged as removable
+# (USB stick, SD card, etc.). Formatting the install target on removable media
+# during an automated agent run is not a safe default.
+device_is_removable() {
+    local syspath
+    syspath="/sys/class/block/$(basename "$(readlink -f "$1" 2>/dev/null)" 2>/dev/null)/removable" 2>/dev/null
+    [ -f "$syspath" ] && [ "$(cat "$syspath" 2>/dev/null)" = "1" ]
+}
+
+# Apple partition type GUIDs — any of these on the target is a refusal.
+# 7C3457EF: APFS
+# 48465300: HFS+
+# 52637672: Apple Recovery (APFS)
+# 53746F72: Apple Boot
+is_apple_partition_type() {
+    local t="$1"
+    case "$t" in
+        7C3457EF-*) return 0 ;;
+        48465300-*) return 0 ;;
+        52637672-*) return 0 ;;
+        53746F72-*) return 0 ;;
+    esac
+    return 1
+}
+
+# Linux filesystem partition type GUID (0FC63DAF-8483-4772-8E79-3D69D8477DE4).
+is_linux_partition_type() {
+    local t="$1"
+    [ "$t" = "0FC63DAF-8483-4772-8E79-3D69D8477DE4" ]
+}
+
 # verify_target verifies a resolved target is safe to hand to a formatter, and
 # prints the evidence. #22's requirement: never format anything whose identity
 # and ownership have not been positively established.
 verify_target() {
     local target="$1" esp="$2" active_id target_id tparent eparent sectors
+    local tguid eguid removable
     target_id=$(block_device_id "$target")
     active_id=$(active_root_device_id)
 
@@ -516,6 +553,28 @@ verify_target() {
         log "resolved target $target is currently mounted; refusing to format it"
         return 1
     fi
+
+    # GPT partition type: the target must be a Linux filesystem partition.
+    # An Apple/APFS/recovery partition handed as 'target' means the recorded
+    # PARTUUID is not from this install — the backend creates Linux partitions.
+    tguid=$(gpt_type_of "$target")
+    if [ -n "$tguid" ]; then
+        if is_apple_partition_type "$tguid"; then
+            log "resolved target $target has Apple GPT type $tguid; refusing (not an install target)"
+            return 1
+        fi
+        if ! is_linux_partition_type "$tguid"; then
+            log "resolved target $target has GPT type $tguid, not the expected Linux filesystem type; refusing"
+            return 1
+        fi
+    fi
+    # ESP must be an EFI System Partition.
+    eguid=$(gpt_type_of "$esp")
+    if [ -n "$eguid" ] && [ "$eguid" != "C12A7328-F81F-11D2-BA4B-00A0C93EC93B" ]; then
+        log "resolved ESP $esp has GPT type $eguid, not the expected ESP type; refusing"
+        return 1
+    fi
+
     tparent=$(parent_disk_of "$target")
     eparent=$(parent_disk_of "$esp")
     if [ -n "$tparent" ] && [ -n "$eparent" ] && [ "$tparent" != "$eparent" ]; then
@@ -524,9 +583,20 @@ verify_target() {
         return 1
     fi
 
+    # Refuse removable parent disks. An install to a USB stick during an
+    # automated agent run is almost certainly a misconfiguration, and the
+    # safety argument for it is unverified.
+    if [ -n "$tparent" ]; then
+        removable=$(cat "/sys/class/block/$tparent/removable" 2>/dev/null || echo "0")
+        if [ "$removable" = "1" ]; then
+            log "resolved target $target is on removable disk '$tparent'; refusing"
+            return 1
+        fi
+    fi
+
     sectors=$(cat "/sys/class/block/$(basename "$target")/size" 2>/dev/null || echo "?")
-    log "preflight: target=$target parent=${tparent:-?} dev=$target_id sectors=$sectors mounted=no"
-    log "preflight: esp=$esp parent=${eparent:-?} dev=$(block_device_id "$esp")"
+    log "preflight: target=$target parent=${tparent:-?} dev=$target_id type=${tguid:-?} sectors=$sectors mounted=no removable=${removable:-0}"
+    log "preflight: esp=$esp parent=${eparent:-?} dev=$(block_device_id "$esp") type=${eguid:-?}"
     return 0
 }
 
@@ -540,13 +610,25 @@ main() {
     # (No -m on mkdir: with -p it applies only to the deepest directory, which
     # is a subtle enough footgun that shellcheck flags it — SC2174.)
     mkdir -p "$RUN_DIR"
-    chmod 0700 "$RUN_DIR" 2>/dev/null || true
+    if ! chmod 0700 "$RUN_DIR" 2>/dev/null; then
+        # Only warn — RUN_DIR on tmpfs (tmpfs defaults to 1777 with sticky bit)
+        # may be owned by another user on a misconfigured system, and aborting
+        # here would prevent a known-working install path from proceeding.
+        # The umask 077 above still protects any files we create inside it.
+        log "WARNING: could not chmod RUN_DIR ($RUN_DIR); files we create under it are still umask-protected"
+    fi
     : >"$LOG_FILE"
+    chmod 0600 "$LOG_FILE" 2>/dev/null || true
 
     # Remove the derived recipe on EVERY exit path, not just the success path.
     # Previously a fisherman failure exited before the cleanup below, leaving a
     # file containing the LUKS passphrase and Wi-Fi PSK on disk while the
     # fallback UI kept running indefinitely (issue #21).
+    #
+    # The log file is NOT removed here: it is needed for diagnostics after a
+    # failure, and it is already protected by the 0600 mode and 0700 RUN_DIR.
+    # The recipe is the dangerous artifact — it carries the LUKS passphrase and
+    # password — and it is derived, so there is no retry argument for keeping it.
     trap 'shred -u "$RECIPE_FILE" 2>/dev/null || rm -f "$RECIPE_FILE" 2>/dev/null || true' EXIT
 
     check_apple_hardware
@@ -566,12 +648,15 @@ main() {
 
     local imgref
     imgref=$(jq -r '.targetImgref // empty' "$cfg")
-    for field in targetImgref rootPartition espPartition filesystem hostname; do
+    for field in targetImgref filesystem hostname; do
         if [ -z "$(jq -r ".$field // empty" "$cfg")" ]; then
             log "install-config.json missing required field: $field"
             exit 1
         fi
     done
+    # rootPartition and espPartition are NOT required when stub_info.json is
+    # present — the agent resolves by PARTUUID (issue #22). They are only
+    # checked in the BOOTSAHI_ALLOW_CONFIG_DEVICES path below.
 
     if ! reject_stored_secrets "$cfg"; then
         exit 1

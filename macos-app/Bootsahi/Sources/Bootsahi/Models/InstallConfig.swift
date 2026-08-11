@@ -7,8 +7,15 @@ import Foundation
 /// between this Swift model and the JSON Schema (yet).
 struct InstallConfig: Codable {
     var targetImgref: String
-    var rootPartition: String
-    var espPartition: String
+    /// DEV/TEST OVERRIDE ONLY. The agent resolves the install target at runtime
+    /// from the backend-recorded PARTUUID in stub_info.json (issue #22). The macOS
+    /// app cannot produce a correct Linux device name — it knows the partition as
+    /// "disk0s5" while Linux sees "nvme0n1p5" — so production should omit this
+    /// field entirely. A config without it succeeds only when stub_info.json is
+    /// present at first boot.
+    var rootPartition: String?
+    /// DEV/TEST OVERRIDE ONLY. Same status as rootPartition.
+    var espPartition: String?
     var filesystem: String // "xfs" | "ext4" | "btrfs"
     var hostname: String
     var encryption: Encryption?

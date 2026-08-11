@@ -19,7 +19,15 @@
 #   1. the backend's own --json protocol suite still passes at that revision
 #      (24 tests, no macOS needed — they mock stdin/stdout);
 #   2. the producer still emits every key the agent consumes, checked against
-#      the backend's real source rather than against our fixtures.
+#      the backend's real source rather than against our fixtures;
+#   3. the terminal result contract from issue #25: a failing run emits a
+#      structured {"event":"result","status":"failure",...} line on stdout
+#      AND exits non-zero. The backend's own suite tests util.emit_result()
+#      in isolation (capsys mocks); none of it runs main.py and observes the
+#      exit status, which is exactly the gap that let the pre-fix backend
+#      catch every exception, print warnings, and fall through to exit 0.
+#      This runs the real main.py --json with a failure injected and checks
+#      the process-level behaviour, so a pin regression can't go green.
 #
 # Usage: ./scripts/test-backend-contract.sh
 set -euo pipefail
@@ -124,6 +132,95 @@ if grep -q "macos_device" components/bootsahi-agent/bootsahi-agent.sh 2>/dev/nul
 	fail=1
 else
 	echo "ok: the agent never reads macos_device"
+fi
+
+# ── 3. The terminal result contract (issue #25) ───────────────────────────
+# The pre-fix backend caught every exception (CalledProcessError, generic
+# Exception), printed advice, and fell through to exit 0 with NO terminal
+# event — so a driver treating exit 0 as its sole success observable told the
+# user to bless and reboot an incomplete install. The fix (in the backend, at
+# the pinned revision) emits one structured result event per run and exits
+# non-zero on every failure. What is missing on THIS side is any CI-held
+# check that the pinned backend actually does that: its own pytest suite only
+# mocks util.emit_result() output and never observes the process exit status.
+#
+# So hold the PINNED backend to the process-level contract here. The injected
+# failure needs no macOS, no disk and no network: a corrupt installer_data.json
+# makes InstallerMain()'s constructor raise JSONDecodeError before any real
+# probing happens, which is the generic-exception path the issue calls out.
+# A pre-fix backend exits 0 with nothing on stdout; a fixed one exits 1 with
+# {"event":"result","status":"failure","kind":"exception",...}.
+echo
+echo "==> terminal result contract (issue #25): injected failure => result event + non-zero exit"
+
+TERM_DIR="$WORK/terminal"
+mkdir -p "$TERM_DIR"
+# Copy the source tree; src/asahi_firmware is a symlink to the clone root's
+# firmware tree, so resolve it the same way mac-hardware-smoketest.sh does.
+cp "$WORK/backend/src/"*.py "$TERM_DIR/"
+ln -sf "$WORK/backend/asahi_firmware" "$TERM_DIR/asahi_firmware"
+# Deliberately invalid JSON: InstallerMain.__init__ does json.load() first, so
+# this raises JSONDecodeError without touching diskutil/system probing at all.
+printf '{"os_list": [\n' >"$TERM_DIR/installer_data.json"
+printf 'contract-test\n' >"$TERM_DIR/version.tag"
+
+TERM_CODE=0
+(cd "$TERM_DIR" && python3 main.py --json >"$WORK/terminal.out" 2>"$WORK/terminal.err") || TERM_CODE=$?
+
+TERM_VERDICT=$(python3 - "$WORK/terminal.out" <<'PY'
+import json, sys
+
+results = []
+with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
+    for line in fh:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("event") == "result":
+            results.append(event)
+
+if not results:
+    print("NO_RESULT_EVENT")
+elif any(ev.get("status") == "success" for ev in results):
+    print("UNEXPECTED_SUCCESS")
+elif any(ev.get("status") == "failure" for ev in results):
+    print("FAILURE_RESULT_OK")
+else:
+    print("UNEXPECTED_STATUS")
+PY
+)
+
+case "$TERM_VERDICT:$TERM_CODE" in
+	FAILURE_RESULT_OK:0)
+		echo "FAIL: injected failure emitted a failure result but exited 0 — the issue #25"
+		echo "      regression, where exit 0 alone reads as success to a driver."
+		fail=1
+		;;
+	FAILURE_RESULT_OK:*)
+		echo "ok: injected failure exited $TERM_CODE and emitted a structured failure result"
+		;;
+	NO_RESULT_EVENT:*)
+		echo "FAIL: injected failure exited $TERM_CODE with NO result event — the exact"
+		echo "      pre-fix behaviour from issue #25 (warnings, then silent exit 0)."
+		fail=1
+		;;
+	UNEXPECTED_SUCCESS:*)
+		echo "FAIL: injected failure reported status=success"
+		fail=1
+		;;
+	*)
+		echo "FAIL: terminal-result check saw verdict '$TERM_VERDICT' with exit $TERM_CODE"
+		fail=1
+		;;
+esac
+
+if [ "$TERM_VERDICT" != "FAILURE_RESULT_OK" ] || [ "$TERM_CODE" -eq 0 ]; then
+	echo "      backend stderr (tail — the traceback from the injected JSON error):"
+	tail -6 "$WORK/terminal.err" 2>/dev/null | sed 's/^/      | /'
 fi
 
 echo

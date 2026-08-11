@@ -225,9 +225,9 @@ fi
 echo
 echo "== 4. cosign =="
 COSIGN_BIN=""
-for p in "$OSROOT/usr/bin/cosign"; do
-	[ -x "$p" ] && COSIGN_BIN="$p" && break
-done
+if [ -x "$OSROOT/usr/bin/cosign" ]; then
+	COSIGN_BIN="$OSROOT/usr/bin/cosign"
+fi
 if [ -n "$COSIGN_BIN" ]; then
 	if out=$("$COSIGN_BIN" version 2>&1); then
 		ok "cosign version: $(echo "$out" | head -1)"

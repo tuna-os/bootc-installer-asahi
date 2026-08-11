@@ -538,6 +538,66 @@ check_exit "exit code (no stub_info, no override -> refuse)" 1 "$r"
 check "no recipe generated without a resolvable target" "" \
 	"$(ls "$r/recipe-captured.json" 2>/dev/null || true)"
 
+# ── D1 recipe validated by the REAL fisherman (issue #26) ─────────────────
+# Every assertion above is OUR opinion of what fisherman accepts. That is
+# exactly how the vfat defect survived: the recipe looked right to us and was
+# never shown to the real consumer. This step hands the generated recipe to
+# fisherman's own `validate` so a future schema change or unsupported fstype
+# does not survive to the install phase.
+#
+# This is the bridge between the stub-based tests (which check the agent's
+# config→recipe logic on every machine, no fisherman required) and the
+# real-install test (test-agent-install.sh, which runs a full install but
+# needs a loop device and a target image). validate is non-destructive — it
+# parses and checks, it does not mutate — so it is cheap enough to run here.
+echo
+echo "==> the REAL fisherman validates the generated recipe (issue #26)"
+FISHERMAN_BIN="${FISHERMAN_BIN:-$(command -v fisherman 2>/dev/null || true)}"
+if [ -z "$FISHERMAN_BIN" ] || [ ! -x "$FISHERMAN_BIN" ]; then
+	echo "  SKIP no fisherman binary available."
+	echo "       This is the assertion that would have caught the vfat bug (#17), so"
+	echo "       its absence is worth noticing. Set FISHERMAN_BIN=/path/to/fisherman"
+	echo "       to enable. In CI (selftest.yml), the pinned fisherman is built and"
+	echo "       this check runs green against the EXACT revision the bootstrap ships."
+elif [ ! -f "$CAPTURED" ]; then
+	echo "FAIL: no recipe was captured by the dump stub — cannot validate"
+	fail=1
+else
+	if out=$("$FISHERMAN_BIN" validate "$CAPTURED" 2>&1); then
+		echo "ok: fisherman validate accepted the generated recipe"
+		echo "    ($("$FISHERMAN_BIN" version 2>/dev/null | head -1))"
+	else
+		echo "FAIL: fisherman REJECTED the recipe this agent generates"
+		echo "$out" | sed 's/^/      | /'
+		fail=1
+	fi
+
+	# Belt-and-braces: prove the validator is actually discriminating.
+	# Feed it the exact defect that shipped — fstype=vfat on the ESP — and
+	# confirm it is rejected (or note that it would be caught later).
+	sed 's/"fstype": "unformatted"/"fstype": "vfat"/' "$CAPTURED" \
+		>"$WORK/recipe-vfat.json"
+	if "$FISHERMAN_BIN" validate "$WORK/recipe-vfat.json" >/dev/null 2>&1; then
+		echo "  note: this fisherman ACCEPTS fstype=vfat at validate time — it will"
+		echo "        fail later in formatPartition instead. Fixed by"
+		echo "        projectbluefin/fisherman#12; our own fstype assertions above"
+		echo "        are the gate until that lands."
+	else
+		echo "ok: fisherman rejects the vfat defect at validate time"
+	fi
+
+	# Also try an unsupported customMount fstype. The agent's fstype-accepted
+	# set above asserts this, but fisherman's own validator is the authority.
+	sed 's/"fstype": "btrfs"/"fstype": "zfs"/' "$CAPTURED" \
+		>"$WORK/recipe-zfs.json"
+	if "$FISHERMAN_BIN" validate "$WORK/recipe-zfs.json" >/dev/null 2>&1; then
+		echo "  note: fisherman ACCEPTS fstype=zfs — it would fail in"
+		echo "        formatPartition. Our own fstype check catches this."
+	else
+		echo "ok: fisherman rejects unsupported fstype=zfs at validate time"
+	fi
+fi
+
 if [ "$fail" -ne 0 ]; then
 	echo "SELFTEST FAILED"
 	exit 1

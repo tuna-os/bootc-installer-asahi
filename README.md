@@ -39,11 +39,22 @@ registry-map.yaml would pull in all six. That gate is
 - [x] D0 scaffold: `scripts/make-payload.sh` + `build-payload.yml` — package
       any asahi-capable bootc image as an asahi-installer zip +
       `installer_data.json` (artifact-only; R2 upload TODO)
-- [ ] D0 validated against a real asahi image (`bonito:gnome-asahi`, tunaOS#774)
-- [ ] D1 first-boot fisherman agent config (`install-config.json` → unattended `bootc install`)
-- [ ] D2 asahi-installer `--json` machine mode (upstreamable)
+- [x] D0 validated against a real asahi image (`bonito:gnome-asahi`, tunaOS#774)
+- [x] D1 first-boot fisherman agent config (`install-config.json` → unattended `bootc install`)
+- [x] D2 asahi-installer `--json` machine mode (upstreamable)
 - [ ] D3 macOS app (SwiftUI, wraps the asahi-installer Python backend)
 - [ ] D4 recoveryOS walkthrough UX, LUKS, Wi-Fi handoff
+
+### What's tested and what it proves
+
+The project distinguishes two claims that are easy to conflate (see #27):
+
+| Claim | Test | What it proves |
+|---|---|---|
+| **"A payload boots"** | `test-payload.sh` + `test-boot-payload.sh` | The kernel, DTBs, modules, and U-Boot EFI chain work. Any asahi-capable image passes this — it proves the *packaging*, not the *product*. |
+| **"The bootstrap handoff is green"** | `test-agent.sh` + `test-agent-disk.sh` + `test-agent-install.sh` | The agent generates a valid recipe, the recipe passes real fisherman `validate`, and a real `bootc install` succeeds end-to-end (canaries on ESP / neighbour / bootstrap / target). |
+| **"The bootstrap image contains everything it needs"** | `test-bootstrap-contents.sh` | Static verification: bootsahi-agent, enabled unit, fisherman, cosign, jq, nmcli, blkid — all present and accounted for. Also gates a negative fixture (agent removed → must fail). |
+| **"The actual bootstrap image boots"** | `test-bootstrap-boot.sh` (opt-in) | Build, package, and boot the repo's own bootstrap under qemu+U-Boot. The deepest fidelity achievable without Apple hardware. Needs aarch64 + qemu + u-boot-qemu. |
 
 Payload layout & `installer_data.json` schema modeled on
 fedora-asahi kiwi-descriptions and

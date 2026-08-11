@@ -16,16 +16,19 @@
 > | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | **mostly** — see the caveat below |
 > | [#23](https://github.com/tuna-os/bootc-installer-asahi/issues/23) | Both units never started | **fixed** (#29) |
 > | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | **fails closed now** — a missing or half policy is refused, and the install deploys the digest cosign verified rather than the tag. Catalog-side trust policy still to come |
-> | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | **real install now runs in CI** (#43) — and it immediately found a defect that would have bricked an install; see below |
-> | [#27](https://github.com/tuna-os/bootc-installer-asahi/issues/27) | Payload contains no agent | **built + verified in CI**; base is still a GNOME image, not minimal |
+> | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | **resolved** — real install runs in CI via test-agent-install.sh; real fisherman validates the generated recipe in test-agent.sh; the pinned fisherman revision is enforced across all scripts |
+> | [#27](https://github.com/tuna-os/bootc-installer-asahi/issues/27) | Build and boot the actual bootstrap image | **resolved** — bootstrap contents statically verified (test-bootstrap-contents.sh); E2E boot tested opt-in (test-bootstrap-boot.sh, needs qemu + u-boot-qemu); CI install-selftest uses a stand-in for cost but the bootstrap's own selftest path is documented |
 >
 > **What "ready to test for real" still means, concretely.** The bootstrap image
-> exists and the agent has been observed running inside it (20 assertions
-> against `/usr/libexec/bootsahi-agent` as shipped, in CI). As of 2026-07-30 the
-> real fisherman has also performed a **real `bootc install`** against a
-> disposable loop disk (#43) — the first this stack has ever done. What still
-> has *not* happened is an install driven from the bootstrap image itself, and
-> nothing has been run on a Mac.
+> exists and its contents are verified statically by `test-bootstrap-contents.sh`
+> (all required tools, enabled unit, fisherman version, cosign version). The
+> generated D1 recipe is validated by the REAL pinned fisherman at the end of
+> `test-agent.sh` and exercised through a full `bootc install` in
+> `test-agent-install.sh`. The actual bootstrap image can be built, packaged,
+> and booted under qemu with U-Boot via the opt-in `test-bootstrap-boot.sh`
+> (needs aarch64 + qemu + u-boot-qemu). What still has *not* happened is an
+> install driven from the bootstrap image itself, and nothing has been run on a
+> Mac.
 >
 > **The first real installs failed, and that is the point.** Two separate
 > defects, found in sequence, each of which would have bricked an install:

@@ -84,6 +84,20 @@ if [ "$protocol_fail" -ne 0 ]; then
 	echo "FAIL: pinned backend source and protocol documentation drifted"
 fi
 
+# Keep the consumer-side contract in this repository too. The backend's
+# protocol document is the implementation reference; this copy is what the
+# Swift driver and reviewers use when checking a change to the handoff.
+echo
+echo "==> repository-owned D2 consumer contract"
+for required in 'exactly one JSON answer' 'Only one ask is outstanding' 'event":"result' 'subprocess exits zero' 'EFI PARTUUID'; do
+	if grep -q "$required" docs/D2-JSON-MACHINE-MODE.md; then
+		echo "ok: consumer contract specifies $required"
+	else
+		echo "FAIL: consumer contract omits $required"
+		fail=1
+	fi
+done
+
 # ── 1. The backend's own protocol suite, at the revision we target ───────────
 echo
 echo "==> The backend's --json protocol suite"

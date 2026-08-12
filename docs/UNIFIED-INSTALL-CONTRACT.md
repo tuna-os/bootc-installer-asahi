@@ -116,14 +116,14 @@ one of them.
 
 ### Both channels this needs already exist upstream
 
-1. **A post-partition write hook.** `installer_data.json`'s EFI partition
+1. **A post-partition write location.** `installer_data.json`'s EFI partition
    entry already sets `copy_installer_data: true`, which makes
    `osinstall.py:169` register `<ESP>/asahi/` as a target, and
    `main.py:596` calls `collect_installer_data()` over those targets —
-   **after** `osins.install()` has created and mounted the partitions. Files
-   are copied from `stub.py`'s `copy_idata` list, and `stub_info.json` and
-   `installer.log` are written there too. Adding `install-config.json` is an
-   append to that list, not a new mechanism.
+   **after** `osins.install()` has created and mounted the partitions. The
+   backend writes `stub_info.json` and `installer.log` there. The macOS app
+   now resolves the returned ESP PARTUUID with `diskutil` and atomically
+   writes `install-config.json` to that same location after verified success.
 2. **A partition identifier that crosses OS boundaries.** Every
    `diskutil.py` partition object carries its GPT UUID
    (`uuid=partinfo["DiskUUID"]`, `diskutil.py:134`), and asahi-installer
@@ -140,7 +140,7 @@ Split by *who knows what, and when*:
 
 | Channel | Written by | When | Contents |
 |---|---|---|---|
-| `<ESP>/asahi/install-config.json` | macOS app → backend's `copy_idata` | after partitioning, by the existing `collect_installer_data()` hook | **intent only**: `targetImgref`, `user` (with `$6$` hash), `hostname`, `filesystem`, `encryption`, `wifi`, `cosign*`, `sshEnabled` |
+| `<ESP>/asahi/install-config.json` | macOS app via `diskutil` | after a verified JSON `result.success` and clean backend exit; the app resolves the returned ESP PARTUUID and atomically writes the file | **intent only**: `targetImgref`, `user` (with `$6$` hash), `hostname`, `filesystem`, `encryption`, `wifi`, `cosign*`, `sshEnabled` |
 | `<ESP>/asahi/stub_info.json` (existing file, extra keys) | backend | same hook | **facts only the backend knows**: every created partition's **PARTUUID** plus its declared **role** (`esp`/`bootstrap`/`target`) |
 
 **Implemented.** The backend records `partitions[]` after `osins.install()`;

@@ -39,6 +39,13 @@ struct InstallProgressView: View {
             }
             .toggleStyle(.button)
             .controlSize(.large)
+
+            if flow.step == .diskSlider && flow.pendingAsk == nil {
+                Button("Start installation") {
+                    flow.startBundledBackend()
+                }
+                .primaryAction()
+            }
         }
     }
 

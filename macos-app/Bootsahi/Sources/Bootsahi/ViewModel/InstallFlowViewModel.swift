@@ -107,9 +107,25 @@ final class InstallFlowViewModel: ObservableObject {
         step = .diskSlider
     }
 
-    /// Launches the forked asahi-installer in --json mode. See
-    /// InstallerProcess's doc comment for the unresolved python3-location
-    /// packaging question.
+    /// Locate the backend supplied by the app bundle in production, with an
+    /// explicit environment override for local dry-runs and CI fixtures.
+    func startBundledBackend() {
+        let environment = ProcessInfo.processInfo.environment
+        let mainPath = environment["BOOTSAHI_BACKEND_MAIN"]
+            ?? Bundle.main.url(forResource: "asahi-installer/src/main", withExtension: "py")?.path
+        guard let mainPath else {
+            step = .failed("The asahi-installer backend is not bundled. Set BOOTSAHI_BACKEND_MAIN for a development run.")
+            return
+        }
+        let mainURL = URL(fileURLWithPath: mainPath)
+        let pythonPath = environment["BOOTSAHI_PYTHON_PATH"] ?? "/usr/bin/python3"
+        startBackend(pythonPath: pythonPath, mainPyPath: mainPath,
+                     workingDirectory: mainURL.deletingLastPathComponent())
+    }
+
+    /// The production entry point from the options screen. The backend owns
+    /// disk partitioning; this app owns only the install intent and starts the
+    /// exact process session used by the real GUI flow.
     func startBackend(pythonPath: String, mainPyPath: String, workingDirectory: URL) {
         let proc = InstallerProcess(pythonPath: pythonPath, mainPyPath: mainPyPath,
                                      workingDirectory: workingDirectory)
@@ -119,14 +135,50 @@ final class InstallFlowViewModel: ObservableObject {
         }
         proc.onTerminate = { [weak self] code in
             guard let self else { return }
-            self.step = Self.terminalStep(exitCode: code, result: self.backendResult)
+            self.finishBackend(exitCode: code)
         }
         process = proc
+        backendResult = nil
         step = .installing
         do {
             try proc.start()
         } catch {
             step = .failed("failed to launch installer backend: \(error)")
+        }
+    }
+
+    /// Test/dry-run seam: callers can exercise the exact config handoff with
+    /// a mounted fixture instead of invoking diskutil on a real Mac.
+    func finishBackendForTesting(exitCode: Int32, writeConfig: (InstallConfig, String) throws -> Void) {
+        let terminal = Self.terminalStep(exitCode: exitCode, result: backendResult)
+        guard case .recoveryWalkthrough = terminal else { step = terminal; return }
+        guard let uuid = backendResult?.efiPartUuid else {
+            step = .failed("installer reported success without an EFI partition UUID")
+            return
+        }
+        do {
+            try writeConfig(config, uuid)
+            step = .recoveryWalkthrough
+        } catch {
+            step = .failed("installer completed, but the install configuration could not be written: \(error)")
+        }
+    }
+
+    /// Launches the forked asahi-installer in --json mode. See
+    /// InstallerProcess's doc comment for the unresolved python3-location
+    /// packaging question.
+    private func finishBackend(exitCode: Int32) {
+        let terminal = Self.terminalStep(exitCode: exitCode, result: backendResult)
+        guard case .recoveryWalkthrough = terminal else { step = terminal; return }
+        guard let uuid = backendResult?.efiPartUuid else {
+            step = .failed("installer reported success without an EFI partition UUID")
+            return
+        }
+        do {
+            try InstallConfigWriter.write(config, efiPartUUID: uuid)
+            step = .recoveryWalkthrough
+        } catch {
+            step = .failed("installer completed, but the install configuration could not be written: \(error)")
         }
     }
 

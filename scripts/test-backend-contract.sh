@@ -211,7 +211,8 @@ TERM_CODE=0
 TERM_VERDICT=$(python3 - "$WORK/terminal.out" <<'PY'
 import json, sys
 
-results = []
+events = []
+parse_errors = []
 with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
     for line in fh:
         line = line.strip()
@@ -220,15 +221,22 @@ with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
+            parse_errors.append(line)
             continue
-        if event.get("event") == "result":
-            results.append(event)
+        events.append(event)
 
-if not results:
+results = [event for event in events if event.get("event") == "result"]
+if parse_errors:
+    print("NON_JSON_OUTPUT")
+elif not results:
     print("NO_RESULT_EVENT")
-elif any(ev.get("status") == "success" for ev in results):
+elif len(results) != 1:
+    print("DUPLICATE_RESULT_EVENTS")
+elif events[-1] is not results[0]:
+    print("RESULT_NOT_LAST")
+elif results[0].get("status") == "success":
     print("UNEXPECTED_SUCCESS")
-elif any(ev.get("status") == "failure" for ev in results):
+elif results[0].get("status") == "failure":
     print("FAILURE_RESULT_OK")
 else:
     print("UNEXPECTED_STATUS")
@@ -251,6 +259,18 @@ case "$TERM_VERDICT:$TERM_CODE" in
 		;;
 	UNEXPECTED_SUCCESS:*)
 		echo "FAIL: injected failure reported status=success"
+		fail=1
+		;;
+	DUPLICATE_RESULT_EVENTS:*)
+		echo "FAIL: injected failure emitted more than one terminal result event"
+		fail=1
+		;;
+	RESULT_NOT_LAST:*)
+		echo "FAIL: terminal result was not the final JSON event"
+		fail=1
+		;;
+	NON_JSON_OUTPUT:*)
+		echo "FAIL: backend emitted non-JSON stdout in machine mode"
 		fail=1
 		;;
 	*)

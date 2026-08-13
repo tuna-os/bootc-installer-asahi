@@ -30,7 +30,8 @@ includes `options` and an optional `default`, while `size` includes byte-valued
 `min`, `max`, and `total` bounds. A size answer uses the backend grammar (for
 example `50%`, `20GB`, or `max`) so bounds remain authoritative in one place.
 
-The final event is exactly one `result`:
+The final protocol event is exactly one `result`; no later JSON event is
+allowed:
 
 ```json
 {"event":"result","status":"success","efiPartUuid":"..."}
@@ -43,6 +44,12 @@ the subprocess exits zero. Missing results, a non-zero exit, or any final
 status other than `success` is a failed install. `aborted` is an intentional
 user exit and is never success. The EFI PARTUUID is the stable handoff to the
 first-boot agent; a macOS device name must not cross this boundary.
+
+The CI process check injects a constructor failure and verifies the negative
+path at the process boundary: exactly one failure result, no non-JSON stdout,
+and the result as the last event before a non-zero exit. This catches a driver
+race or a backend exception handler that would otherwise make a partial run
+look complete.
 
 ## Compatibility and safety
 

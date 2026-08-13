@@ -56,6 +56,13 @@ fail=0
 echo "==> Fetching the pinned backend ($BACKEND_REV)"
 git clone --quiet "$BACKEND_REPO" "$WORK/backend"
 git -C "$WORK/backend" checkout --quiet "$BACKEND_REV"
+checked_out=$(git -C "$WORK/backend" rev-parse HEAD)
+if [ "$checked_out" != "$BACKEND_REV" ]; then
+	echo "FAIL: backend checkout resolved to $checked_out, expected pinned $BACKEND_REV"
+	echo "      Refusing to run protocol checks against an unverified revision."
+	exit 1
+fi
+echo "ok: backend checkout is exactly $checked_out"
 
 # The executable and its protocol document are one release unit. A checkout
 # that retains tests but loses a documented event or answer rule is not safe

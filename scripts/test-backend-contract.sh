@@ -57,6 +57,33 @@ echo "==> Fetching the pinned backend ($BACKEND_REV)"
 git clone --quiet "$BACKEND_REPO" "$WORK/backend"
 git -C "$WORK/backend" checkout --quiet "$BACKEND_REV"
 
+# The executable and its protocol document are one release unit. A checkout
+# that retains tests but loses a documented event or answer rule is not safe
+# for the Swift driver to consume. Check both at the exact pinned revision.
+echo
+echo "==> --json protocol surface at the pinned revision"
+protocol_fail=0
+for required in 'JSON_MODE' 'ask_json' 'emit_result' '"--json"'; do
+	if grep -q "$required" "$WORK/backend/src/main.py" "$WORK/backend/src/util.py" 2>/dev/null; then
+		echo "ok: backend source contains $required"
+	else
+		echo "FAIL: backend source no longer contains $required"
+		protocol_fail=1
+	fi
+done
+for required in 'event": "message' 'event": "ask' 'event": "result' 'exactly one' 'answering the most recent'; do
+	if grep -q "$required" "$WORK/backend/docs/json-mode.md" 2>/dev/null; then
+		echo "ok: protocol document specifies $required"
+	else
+		echo "FAIL: protocol document no longer specifies $required"
+		protocol_fail=1
+	fi
+done
+if [ "$protocol_fail" -ne 0 ]; then
+	fail=1
+	echo "FAIL: pinned backend source and protocol documentation drifted"
+fi
+
 # ── 1. The backend's own protocol suite, at the revision we target ───────────
 echo
 echo "==> The backend's --json protocol suite"

@@ -1,4 +1,4 @@
-# Bootsahi (macOS app) — SKELETON, partially CI-verified
+# Bootsahi (macOS app) — SwiftUI frontend, partially CI-verified
 
 D3 from [`docs/DESIGN.md`](../../docs/DESIGN.md): a SwiftUI app driving the
 forked asahi-installer backend
@@ -38,6 +38,9 @@ by `swift build`/`swift test` in CI.
 - `Backend/InstallerProcess.swift` — spawns `python3 main.py --json`,
   streams stdout line-by-line into decoded `BackendEvent`s, writes
   `BackendAnswer` lines back to stdin.
+- `Backend/InstallConfigWriter.swift` — resolves the backend's ESP PARTUUID
+  with `diskutil`, mounts it if needed, and atomically writes
+  `asahi/install-config.json` after verified backend success.
 - `ViewModel/InstallFlowViewModel.swift` — the wizard state machine.
 - `Views/` — one view per step (welcome, catalog, options, disk-slider/
   progress, recoveryOS walkthrough).
@@ -51,18 +54,15 @@ by `swift build`/`swift test` in CI.
 - **catalog.json generation in CI.** `Resources/catalog.json` is a single
   hand-written placeholder entry. The real thing (generated from
   registry-map.yaml, per DESIGN.md) doesn't exist yet.
-- **The install-config.json handoff.** The forked backend creates the
-  target partitions (stub macOS, ESP, root) but has no reason to know about
-  `install-config.json` — it only ever installs the single "bootsahi-boot"
-  bootstrap OS. Something (this app, or a small addition to the fork) needs
-  to write `install-config.json` onto the newly-created ESP once the
-  backend's `do_install()` completes, using whatever partition devices it
-  reports back. That reporting contract doesn't exist yet — `docs/DESIGN.md`
-  and `docs/json-mode.md` don't specify it, and this skeleton doesn't
-  either. This is probably the single biggest remaining design gap between
-  D2 and D3/D1 actually working end to end.
+- **Backend discovery for packaged distribution.** The app drives a real
+  process session when `BOOTSAHI_BACKEND_MAIN` is supplied (the development
+  and CI seam), or when a future bundle contains
+  `asahi-installer/src/main.py`. The Python runtime and notarized DMG still
+  need a release packaging decision; the app refuses clearly when neither
+  backend location exists.
 - **SoC-generation gate** (M1/M2 only, refuse M3+ politely) —
-  `WelcomeView.swift` has a TODO comment; not implemented.
+  `HardwareGate` checks the Apple Silicon capability and refuses known M3/M4
+  model families before the first destructive action.
 - **Wi-Fi SSID prefill from the current macOS network** (DESIGN.md D4,
   `SystemConfiguration`) — `OptionsView.swift` has a plain manual field.
 - **Real disk-space slider bytes**, notarization, and the recoveryOS

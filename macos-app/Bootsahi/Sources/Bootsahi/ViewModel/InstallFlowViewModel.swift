@@ -56,11 +56,38 @@ final class InstallFlowViewModel: ObservableObject {
 
     private func pollE2EDirective() {
         guard let directive = E2EDrive.nextDirective() else { return }
+        // apply() reports; a second call here would just rewrite the same file.
+        apply(directive)
+    }
+
+    /// Applies one directive to the live view model — the same mutations a
+    /// click performs, which is the whole point of the seam (see E2EDrive's
+    /// doc comment on why this drives the real ViewModel rather than a UI
+    /// automation framework).
+    ///
+    /// Split out of `pollE2EDirective` and left internal rather than private
+    /// so tests can drive it without a BOOTSAHI_E2E_DRIVE=1 run and the /tmp
+    /// file dance — the same reasoning that made `terminalStep` a pure static.
+    /// Previously the only coverage was of the decoder, so nothing checked
+    /// that a decoded directive did anything.
+    func apply(_ directive: E2EDrive.Directive) {
         switch directive {
         case .selectCatalogEntry(let imgref):
             selectedEntry = catalog?.entries.first { $0.imgref == imgref }
         case .setHostname(let value):
             config.hostname = value
+        case .setUser(let username, let fullname, let password):
+            applyUser(username: username, fullname: fullname, password: password)
+        case .setWifi(let ssid):
+            // Empty SSID clears it, matching OptionsView's `if !wifiSSID.isEmpty`
+            // guard — otherwise a harness could not test the no-Wi-Fi config.
+            config.wifi = ssid.isEmpty ? nil : .init(ssid: ssid)
+        case .setEncryption(let type):
+            config.encryption = .init(type: type)
+        case .setFilesystem(let value):
+            config.filesystem = value
+        case .startBackend:
+            startBundledBackend()
         case .advance:
             switch step {
             case .welcome: advanceToCatalog()
@@ -75,12 +102,47 @@ final class InstallFlowViewModel: ObservableObject {
         reportE2EState()
     }
 
+    /// Applies a user exactly the way OptionsView's Continue button does:
+    /// hash first, and let only the hash reach `config`.
+    ///
+    /// The drive seam deliberately takes the password as typed rather than a
+    /// pre-hashed value. Accepting a hash would let the harness pass a config
+    /// the real UI could never produce, so the one property most worth
+    /// covering — that plaintext never reaches the model, #21 — would be
+    /// asserted about a code path no user crosses. `ConfigContractTests`
+    /// already refuses a config whose password is not `$6$`-shaped, so a
+    /// regression here fails the suite rather than reaching a disk.
+    private func applyUser(username: String, fullname: String?, password: String) {
+        config.user = InstallConfig.UserSpec(
+            username: username,
+            fullname: fullname,
+            password: PasswordHash.hash(password),
+            groups: config.user?.groups ?? ["wheel"])
+    }
+
     private func reportE2EState() {
         var state: [String: Any] = ["step": "\(step)"]
         if let entry = selectedEntry { state["selectedEntry"] = entry.imgref }
         state["hostname"] = config.hostname
         state["pendingAskKind"] = pendingAsk?.kind.rawValue ?? NSNull()
         state["logCount"] = log.count
+        // Enough of the config for a harness to assert the handoff actually
+        // carries what the wizard collected — the audit's complaint was that
+        // drive mode could not observe user/Wi-Fi/LUKS at all.
+        state["username"] = config.user?.username ?? NSNull()
+        // The SHAPE of the stored password, never the value. A harness needs to
+        // prove hashing happened; writing the hash itself into a world-readable
+        // /tmp file would be a new place for a credential to rest, which is the
+        // same objection #21 makes about the ESP.
+        state["passwordIsHashed"] = (config.user?.password ?? "").hasPrefix("$6$")
+        state["wifiSsid"] = config.wifi?.ssid ?? NSNull()
+        state["encryptionType"] = config.encryption?.type ?? NSNull()
+        state["filesystem"] = config.filesystem
+        // The verified-completion half of the slice (#25): a harness must be
+        // able to tell "backend said success" from "the app decided it was
+        // done", which is exactly the distinction terminalStep exists to make.
+        state["backendStatus"] = backendResult?.status.rawValue ?? NSNull()
+        state["backendHasEfiPartUuid"] = backendResult?.efiPartUuid != nil
         E2EDrive.report(state)
     }
 
@@ -107,9 +169,25 @@ final class InstallFlowViewModel: ObservableObject {
         step = .diskSlider
     }
 
-    /// Launches the forked asahi-installer in --json mode. See
-    /// InstallerProcess's doc comment for the unresolved python3-location
-    /// packaging question.
+    /// Locate the backend supplied by the app bundle in production, with an
+    /// explicit environment override for local dry-runs and CI fixtures.
+    func startBundledBackend() {
+        let environment = ProcessInfo.processInfo.environment
+        let mainPath = environment["BOOTSAHI_BACKEND_MAIN"]
+            ?? Bundle.main.url(forResource: "asahi-installer/src/main", withExtension: "py")?.path
+        guard let mainPath else {
+            step = .failed("The asahi-installer backend is not bundled. Set BOOTSAHI_BACKEND_MAIN for a development run.")
+            return
+        }
+        let mainURL = URL(fileURLWithPath: mainPath)
+        let pythonPath = environment["BOOTSAHI_PYTHON_PATH"] ?? "/usr/bin/python3"
+        startBackend(pythonPath: pythonPath, mainPyPath: mainPath,
+                     workingDirectory: mainURL.deletingLastPathComponent())
+    }
+
+    /// The production entry point from the options screen. The backend owns
+    /// disk partitioning; this app owns only the install intent and starts the
+    /// exact process session used by the real GUI flow.
     func startBackend(pythonPath: String, mainPyPath: String, workingDirectory: URL) {
         let proc = InstallerProcess(pythonPath: pythonPath, mainPyPath: mainPyPath,
                                      workingDirectory: workingDirectory)
@@ -119,14 +197,50 @@ final class InstallFlowViewModel: ObservableObject {
         }
         proc.onTerminate = { [weak self] code in
             guard let self else { return }
-            self.step = Self.terminalStep(exitCode: code, result: self.backendResult)
+            self.finishBackend(exitCode: code)
         }
         process = proc
+        backendResult = nil
         step = .installing
         do {
             try proc.start()
         } catch {
             step = .failed("failed to launch installer backend: \(error)")
+        }
+    }
+
+    /// Test/dry-run seam: callers can exercise the exact config handoff with
+    /// a mounted fixture instead of invoking diskutil on a real Mac.
+    func finishBackendForTesting(exitCode: Int32, writeConfig: (InstallConfig, String) throws -> Void) {
+        let terminal = Self.terminalStep(exitCode: exitCode, result: backendResult)
+        guard case .recoveryWalkthrough = terminal else { step = terminal; return }
+        guard let uuid = backendResult?.efiPartUuid else {
+            step = .failed("installer reported success without an EFI partition UUID")
+            return
+        }
+        do {
+            try writeConfig(config, uuid)
+            step = .recoveryWalkthrough
+        } catch {
+            step = .failed("installer completed, but the install configuration could not be written: \(error)")
+        }
+    }
+
+    /// Launches the forked asahi-installer in --json mode. See
+    /// InstallerProcess's doc comment for the unresolved python3-location
+    /// packaging question.
+    private func finishBackend(exitCode: Int32) {
+        let terminal = Self.terminalStep(exitCode: exitCode, result: backendResult)
+        guard case .recoveryWalkthrough = terminal else { step = terminal; return }
+        guard let uuid = backendResult?.efiPartUuid else {
+            step = .failed("installer reported success without an EFI partition UUID")
+            return
+        }
+        do {
+            try InstallConfigWriter.write(config, efiPartUUID: uuid)
+            step = .recoveryWalkthrough
+        } catch {
+            step = .failed("installer completed, but the install configuration could not be written: \(error)")
         }
     }
 

@@ -143,13 +143,10 @@ struct OptionsView: View {
                 // makes the config state what was decided instead of relying on
                 // both sides agreeing about the meaning of absence.
                 flow.config.encryption = .init(type: "none")
-                // Hash HERE rather than at write time. writeInstallConfig() is
-                // still unimplemented, and whoever implements it should find a
-                // config that already carries a $6$ hash rather than a plaintext
-                // password plus a comment asking them to remember. The agent
-                // refuses plaintext (#21), so forgetting would not be a silent
-                // weakness — it would be an install that fails at first boot,
-                // after the disk is already repartitioned.
+                // Hash HERE rather than at write time. The handoff writer
+                // receives a config that already carries a $6$ hash rather
+                // than plaintext, and the agent refuses any other form before
+                // it consumes the file on first boot.
                 updateUser(password: PasswordHash.hash(password))
                 if !wifiSSID.isEmpty {
                     flow.config.wifi = .init(ssid: wifiSSID)

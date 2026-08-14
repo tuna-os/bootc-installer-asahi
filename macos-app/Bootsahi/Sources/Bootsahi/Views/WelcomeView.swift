@@ -75,6 +75,7 @@ struct WelcomeView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityElement(children: .combine)
+                }
             }
             .frame(maxWidth: 520, alignment: .leading)
         } actions: {

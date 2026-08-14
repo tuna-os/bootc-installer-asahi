@@ -22,13 +22,28 @@ enum E2EDrive {
     private static let directivePath = "/tmp/bootsahi-e2e-drive.json"
     private static let statePath = "/tmp/bootsahi-e2e-drive-state.json"
 
+    /// The vocabulary is deliberately the set of things a *user* can do, not a
+    /// set of state setters. `setUser` carries the password as typed, exactly
+    /// as the text field holds it, because the harness has to exercise the
+    /// hashing step rather than route around it — see the note on the view
+    /// model's `applyUser`. `startBackend` exists because a drive seam that
+    /// can fill the form but not press the button leaves the whole
+    /// backend-driving half of D3 uncovered, which is the gap this widening
+    /// closes (the earlier audit's "decoder scaffolding" remark).
     enum Directive: Decodable {
         case selectCatalogEntry(imgref: String)
         case setHostname(String)
+        case setUser(username: String, fullname: String?, password: String)
+        case setWifi(ssid: String)
+        case setEncryption(type: String)
+        case setFilesystem(String)
+        case startBackend
         case advance
         case answerAsk(JSONValue?)
 
-        private enum CodingKeys: String, CodingKey { case action, imgref, value }
+        private enum CodingKeys: String, CodingKey {
+            case action, imgref, value, username, fullname, password, ssid, type
+        }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -37,6 +52,19 @@ enum E2EDrive {
                 self = .selectCatalogEntry(imgref: try c.decode(String.self, forKey: .imgref))
             case "setHostname":
                 self = .setHostname(try c.decode(String.self, forKey: .value))
+            case "setUser":
+                let username = try c.decode(String.self, forKey: .username)
+                let fullname = try c.decodeIfPresent(String.self, forKey: .fullname)
+                let password = try c.decode(String.self, forKey: .password)
+                self = .setUser(username: username, fullname: fullname, password: password)
+            case "setWifi":
+                self = .setWifi(ssid: try c.decode(String.self, forKey: .ssid))
+            case "setEncryption":
+                self = .setEncryption(type: try c.decode(String.self, forKey: .type))
+            case "setFilesystem":
+                self = .setFilesystem(try c.decode(String.self, forKey: .value))
+            case "startBackend":
+                self = .startBackend
             case "advance":
                 self = .advance
             case "answerAsk":

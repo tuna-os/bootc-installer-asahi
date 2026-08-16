@@ -2,9 +2,9 @@
 
 D3 from [`docs/DESIGN.md`](../../docs/DESIGN.md): a SwiftUI app driving the
 forked asahi-installer backend
-([`hanthor/asahi-installer@json-machine-mode`](https://github.com/hanthor/asahi-installer/tree/json-machine-mode),
+([`tuna-os/bootc-installer-asahi@json-machine-mode`](https://github.com/tuna-os/bootc-installer-asahi/tree/json-machine-mode),
 D2) over its `--json` stdio protocol
-([`docs/json-mode.md`](https://github.com/hanthor/asahi-installer/blob/json-machine-mode/docs/json-mode.md)).
+([`docs/json-mode.md`](https://github.com/tuna-os/bootc-installer-asahi/blob/json-machine-mode/docs/json-mode.md)).
 
 **Written with no local Swift toolchain** — no macOS host in the environment
 that produced it. It was, however, subsequently built and tested for real on

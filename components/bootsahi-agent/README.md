@@ -54,7 +54,7 @@ disk-auto-partition path.
 | Code | Meaning | greetd fallback |
 |------|---------|------------------|
 | `0`  | Installed successfully | none — the agent already rebooted |
-| `2`  | No `install-config.json` yet (expected first-boot state) | show the interactive fisherman-driven UI (`tuna-installer-*`; contract documented as `INSTALLER-FRONTENDS.md` in tuna-os/tunaOS) |
+| `2`  | No `install-config.json` yet (expected first-boot state) | show the interactive fisherman-driven UI (`tuna-installer-*`; contract documented as [`docs/INSTALLER-FRONTENDS.md`](https://github.com/tuna-os/tunaOS/blob/main/docs/INSTALLER-FRONTENDS.md) in tuna-os/tunaOS) |
 | `1`  | Config present but the install failed | show the interactive UI, with `/run/bootsahi/install.log` surfaced for diagnosis |
 
 ## Ship it in every bootsahi bootstrap image

@@ -15,11 +15,11 @@
 > | [#19](https://github.com/tuna-os/bootc-installer-asahi/issues/19) | D1 cannot format the root it runs from | **decided + implemented** ([ADR 0001](adr/0001-bootstrap-partition-layout.md)); disposable real-fisherman install is green |
 > | [#20](https://github.com/tuna-os/bootc-installer-asahi/issues/20) | LUKS silently skipped in manual path | **fails closed** (#29); real support open |
 > | [#21](https://github.com/tuna-os/bootc-installer-asahi/issues/21) | Secrets persist on ESP; cleanup not failure-safe | **agent refuses stored secrets; derived secrets are cleaned; retry intent remains on failure** |
-> | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | **mostly** — see the caveat below |
-> | [#23](https://github.com/tuna-os/bootc-installer-asahi/issues/23) | Both units never started | **fixed** (#29) |
-> | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | **fails closed now** — a missing or half policy is refused, and the install deploys the digest cosign verified rather than the tag. Catalog-side trust policy still to come |
-> | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | **resolved** — real install runs in CI via test-agent-install.sh; real fisherman validates the generated recipe in test-agent.sh; the pinned fisherman revision is enforced across all scripts |
-> | [#27](https://github.com/tuna-os/bootc-installer-asahi/issues/27) | Build and boot the actual bootstrap image | **resolved** — bootstrap contents statically verified (test-bootstrap-contents.sh); E2E boot tested opt-in (test-bootstrap-boot.sh, needs qemu + u-boot-qemu); CI install-selftest uses a stand-in for cost but the bootstrap's own selftest path is documented |
+> | [#22](https://github.com/tuna-os/bootc-installer-asahi/issues/22) | Stable partition identity + ownership checks | **implemented** — runtime PARTUUID resolution and preflight verification in place |
+> | [#23](https://github.com/tuna-os/bootc-installer-asahi/issues/23) | Both units never started | **resolved** — units fixed and verified (#29) |
+> | [#24](https://github.com/tuna-os/bootc-installer-asahi/issues/24) | Signature verification optional | **fails closed** — missing or incomplete policy is refused; deploys cosign-verified digest |
+> | [#26](https://github.com/tuna-os/bootc-installer-asahi/issues/26) | Exercise the recipe with real fisherman | **resolved** — real install runs in CI via test-agent-install.sh; real fisherman validates generated recipe in test-agent.sh |
+> | [#27](https://github.com/tuna-os/bootc-installer-asahi/issues/27) | Build and boot the actual bootstrap image | **resolved** — bootstrap contents statically verified (test-bootstrap-contents.sh); E2E boot tested opt-in (test-bootstrap-boot.sh) |
 >
 > **What "ready to test for real" still means, concretely.** The bootstrap image
 > exists and its contents are verified statically by `test-bootstrap-contents.sh`

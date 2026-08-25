@@ -230,6 +230,7 @@ grep -q '"targetImgref": "ghcr.io/tuna-os/bonito:gnome-asahi"' "$r/install.log" 
 	{ echo "FAIL: targetImgref should remain the tag so upgrades still track it"; shape_fail=1; }
 grep -q '"target": "/"' "$r/install.log" || { echo "FAIL: recipe missing root customMount"; shape_fail=1; }
 grep -q '"target": "/boot/efi"' "$r/install.log" || { echo "FAIL: recipe missing ESP customMount"; shape_fail=1; }
+grep -q '"hostname": "tuna-mac"' "$r/install.log" || { echo "FAIL: recipe missing expected hostname"; shape_fail=1; }
 grep -q '"imageType": "bootc"' "$r/install.log" || { echo "FAIL: recipe missing imageType=bootc"; shape_fail=1; }
 if [ "$shape_fail" -eq 0 ]; then
 	echo "ok: recipe.json shape"

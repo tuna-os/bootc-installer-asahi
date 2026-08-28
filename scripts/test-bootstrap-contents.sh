@@ -152,6 +152,9 @@ if [ -f "$OSROOT/usr/libexec/bootsahi-agent" ]; then
 else
 	bad "bootsahi-agent MISSING — this bootstrap cannot install"
 fi
+[ -r "$OSROOT/usr/libexec/bootsahi-agent-recipe.sh" ] &&
+	ok "recipe adapter installed" ||
+	bad "recipe adapter MISSING — bootsahi-agent cannot start"
 
 if [ -f "$OSROOT/usr/lib/systemd/system/bootsahi-agent.service" ]; then
 	ok "agent unit shipped"

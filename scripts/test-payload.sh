@@ -119,6 +119,9 @@ if [ -f "$OSROOT/usr/share/bootsahi/bootstrap-release" ]; then
 	[ -x "$OSROOT/usr/libexec/bootsahi-agent" ] &&
 		ok "bootsahi-agent installed and executable" ||
 		bad "bootsahi-agent missing or not executable"
+	[ -r "$OSROOT/usr/libexec/bootsahi-agent-recipe.sh" ] &&
+		ok "recipe adapter installed" ||
+		bad "recipe adapter missing — bootsahi-agent cannot start"
 	[ -x "$OSROOT/usr/libexec/asahi-bootbin-sync" ] &&
 		ok "asahi-bootbin-sync installed" || bad "asahi-bootbin-sync missing"
 	[ -f "$OSROOT/usr/lib/systemd/system/bootsahi-agent.service" ] &&

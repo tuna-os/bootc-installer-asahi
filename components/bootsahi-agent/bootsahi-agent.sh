@@ -22,6 +22,14 @@ RUN_DIR="${BOOTSAHI_RUN_DIR:-/run/bootsahi}"
 LOG_FILE="$RUN_DIR/install.log"
 RECIPE_FILE="$RUN_DIR/recipe.json"
 FISHERMAN_BIN="${BOOTSAHI_FISHERMAN_BIN:-fisherman}"
+AGENT_LIB_DIR="${BOOTSAHI_AGENT_LIB_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+
+# Recipe translation is a separate contract boundary: install-config.json is
+# owned by the macOS app, while recipe.json is consumed by fisherman. Keep that
+# adapter independently sourceable/testable instead of embedding it in the
+# destructive first-boot orchestrator.
+# shellcheck source=components/bootsahi-agent/bootsahi-agent-recipe.sh
+source "$AGENT_LIB_DIR/bootsahi-agent-recipe.sh"
 
 # Write to both the log file and stderr WITHOUT a pipeline. The obvious
 # `echo ... | tee -a "$LOG_FILE" >&2` puts a pipe on the hot path of every
@@ -251,81 +259,6 @@ reject_plaintext_password() {
     log "typed must never be written there. Supply a \$6\$ (SHA-512 crypt) hash;"
     log "fisherman applies it verbatim via chpasswd -e. See issue #21."
     return 1
-}
-
-# build_recipe translates install-config.json into a fisherman recipe.json.
-# customMounts is used (not disk/filesystem auto-partition) because the
-# asahi-installer backend has already created espPartition/rootPartition.
-build_recipe() {
-    local cfg="$1" root="$2" esp="$3" deploy_ref="$4"
-    jq -n \
-        --argjson c "$(cat "$cfg")" \
-        --arg root "$root" \
-        --arg esp "$esp" \
-        --arg deploy "$deploy_ref" \
-        '
-        {
-            customMounts: [
-                # The ESP fstype MUST be "unformatted". Two reasons, both load-bearing:
-                #
-                # 1. "vfat" (what this said before) is not a token fisherman
-                #    accepts at all. recipe.Validate() does not check fstype for
-                #    customMounts, so it passes validation and then dies inside
-                #    disk.formatPartition() — whose switch knows "fat32", not
-                #    "vfat" — with `unsupported filesystem: "vfat"`. This recipe
-                #    has therefore never been valid; it fails at fisherman step 1.
-                #
-                # 2. The obvious fix — "fat32" — is the dangerous one. Any token
-                #    other than "unformatted"/"" makes ApplyCustomLayout run mkfs
-                #    on the partition, and by the time this agent runs, the ESP
-                #    already holds m1n1/boot.bin, the bootloader, stub_info.json,
-                #    and vendorfw/ — Apple firmware extracted on-device, which we
-                #    are not permitted to redistribute and therefore cannot get
-                #    back. mkfs.fat on the ESP means a DFU restore.
-                #
-                # "unformatted" skips only the mkfs; the mount and the efiPart
-                # bookkeeping fisherman needs for the boot entry both still happen.
-                { partition: $esp, target: "/boot/efi", fstype: "unformatted" },
-                { partition: $root, target: "/", fstype: $c.filesystem }
-            ],
-            # image is what gets PULLED and deployed: the digest-pinned
-            # reference cosign actually verified. targetImgref is what the
-            # installed system tracks for upgrades, and must stay the mutable
-            # tag — pinning that too would freeze the machine on one build and
-            # it would never receive an update.
-            image: $deploy,
-            targetImgref: $c.targetImgref,
-            imageType: "bootc",
-            # bootloader and composeFsBackend are ONE decision, not two.
-            #
-            # systemd-boot is required here: the Asahi chain is m1n1 -> U-Boot
-            # -> EFI, and the U-Boot EFI implementation has no persistent EFI
-            # variables, so a grub2 install has nothing to write a boot entry
-            # into. But bootc only honours --bootloader systemd on the
-            # composefs deployment path; on the ostree path it delegates
-            # bootloader installation to bootupd and fails outright with
-            # "bootupd is required for ostree-based installs".
-            #
-            # Requesting systemd-boot without composefs is therefore an install
-            # that cannot succeed — and it fails LATE, after the image is
-            # deployed and the target partition has already been formatted.
-            # That is the worst possible place for it: the Mac is left with a
-            # wiped partition and no bootable system. Observed in CI by
-            # test-agent-install.sh, which is exactly the class of defect
-            # issue #26 exists to catch before hardware.
-            #
-            # This pairing is also what the first successful Dakota Asahi boot
-            # used (--composefs-backend --bootloader systemd), so it is the
-            # proven combination rather than a guess.
-            bootloader: "systemd",
-            composeFsBackend: true,
-            hostname: $c.hostname,
-            encryption: ($c.encryption // {type: "none"}),
-            user: ($c.user // {}),
-            flatpaks: [],
-            distroID: "bootsahi"
-        }
-        ' >"$RECIPE_FILE"
 }
 
 # Authoritative Apple Silicon check, mirroring asahi-bootbin-sync.sh. The unit's

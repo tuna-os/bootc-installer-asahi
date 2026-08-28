@@ -60,6 +60,7 @@ echo "==> output tag:        $TAG"
 # ── Stage the pieces the Containerfile COPYs ────────────────────────────────
 echo "==> Staging agent, units and schema into the build context"
 install -m 0755 "$HERE/components/bootsahi-agent/bootsahi-agent.sh" "$CTX/bootsahi-agent"
+install -m 0644 "$HERE/components/bootsahi-agent/bootsahi-agent-recipe.sh" "$CTX/bootsahi-agent-recipe.sh"
 install -m 0755 "$HERE/components/asahi-bootbin-sync/asahi-bootbin-sync.sh" "$CTX/asahi-bootbin-sync"
 install -m 0644 "$HERE/components/bootsahi-agent/bootsahi-agent.service" "$CTX/bootsahi-agent.service"
 install -m 0644 "$HERE/components/asahi-bootbin-sync/asahi-bootbin-sync.service" "$CTX/asahi-bootbin-sync.service"

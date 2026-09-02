@@ -27,6 +27,18 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
           shellcheck -S warning scripts/*.sh components/*/*.sh
+      # catalog.json's `verified` field is the only gate stopping the app
+      # from offering an unbootable image (#70): a promoted tag must pass
+      # the Asahi golden-manifest harness before it's marked verified:true.
+      # There is no CI generator for catalog.json yet (that needs
+      # registry-map.yaml + a real harness-result feed per
+      # tuna-os/tunaOS#910 — see ROADMAP.md's Alpha checklist), so nothing
+      # stopped verified:true from being a hand-edited boolean with no
+      # backing evidence. This is the interim guard: fail the build if a
+      # verified:true entry has no matching, clean-pass record in
+      # docs/harness-results.json.
+      - name: Validate catalog.json harness evidence
+        run: ./scripts/validate-catalog.sh
   selftest:
     runs-on: ubuntu-24.04
     steps:

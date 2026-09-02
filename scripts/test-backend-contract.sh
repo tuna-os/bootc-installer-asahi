@@ -56,6 +56,54 @@ fail=0
 echo "==> Fetching the pinned backend ($BACKEND_REV)"
 git clone --quiet "$BACKEND_REPO" "$WORK/backend"
 git -C "$WORK/backend" checkout --quiet "$BACKEND_REV"
+checked_out=$(git -C "$WORK/backend" rev-parse HEAD)
+if [ "$checked_out" != "$BACKEND_REV" ]; then
+	echo "FAIL: backend checkout resolved to $checked_out, expected pinned $BACKEND_REV"
+	echo "      Refusing to run protocol checks against an unverified revision."
+	exit 1
+fi
+echo "ok: backend checkout is exactly $checked_out"
+
+# The executable and its protocol document are one release unit. A checkout
+# that retains tests but loses a documented event or answer rule is not safe
+# for the Swift driver to consume. Check both at the exact pinned revision.
+echo
+echo "==> --json protocol surface at the pinned revision"
+protocol_fail=0
+for required in 'JSON_MODE' 'ask_json' 'emit_result' '"--json"'; do
+	if grep -q "$required" "$WORK/backend/src/main.py" "$WORK/backend/src/util.py" 2>/dev/null; then
+		echo "ok: backend source contains $required"
+	else
+		echo "FAIL: backend source no longer contains $required"
+		protocol_fail=1
+	fi
+done
+for required in 'event": "message' 'event": "ask' 'event": "result' 'exactly one' 'answering the most recent'; do
+	if grep -q "$required" "$WORK/backend/docs/json-mode.md" 2>/dev/null; then
+		echo "ok: protocol document specifies $required"
+	else
+		echo "FAIL: protocol document no longer specifies $required"
+		protocol_fail=1
+	fi
+done
+if [ "$protocol_fail" -ne 0 ]; then
+	fail=1
+	echo "FAIL: pinned backend source and protocol documentation drifted"
+fi
+
+# Keep the consumer-side contract in this repository too. The backend's
+# protocol document is the implementation reference; this copy is what the
+# Swift driver and reviewers use when checking a change to the handoff.
+echo
+echo "==> repository-owned D2 consumer contract"
+for required in 'exactly one JSON answer' 'Only one ask is outstanding' 'event":"result' 'subprocess exits zero' 'EFI PARTUUID'; do
+	if grep -q "$required" docs/D2-JSON-MACHINE-MODE.md; then
+		echo "ok: consumer contract specifies $required"
+	else
+		echo "FAIL: consumer contract omits $required"
+		fail=1
+	fi
+done
 
 # The executable and its protocol document are one release unit. A checkout
 # that retains tests but loses a documented event or answer rule is not safe
@@ -197,7 +245,8 @@ TERM_CODE=0
 TERM_VERDICT=$(python3 - "$WORK/terminal.out" <<'PY'
 import json, sys
 
-results = []
+events = []
+parse_errors = []
 with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
     for line in fh:
         line = line.strip()
@@ -206,15 +255,22 @@ with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
+            parse_errors.append(line)
             continue
-        if event.get("event") == "result":
-            results.append(event)
+        events.append(event)
 
-if not results:
+results = [event for event in events if event.get("event") == "result"]
+if parse_errors:
+    print("NON_JSON_OUTPUT")
+elif not results:
     print("NO_RESULT_EVENT")
-elif any(ev.get("status") == "success" for ev in results):
+elif len(results) != 1:
+    print("DUPLICATE_RESULT_EVENTS")
+elif events[-1] is not results[0]:
+    print("RESULT_NOT_LAST")
+elif results[0].get("status") == "success":
     print("UNEXPECTED_SUCCESS")
-elif any(ev.get("status") == "failure" for ev in results):
+elif results[0].get("status") == "failure":
     print("FAILURE_RESULT_OK")
 else:
     print("UNEXPECTED_STATUS")
@@ -237,6 +293,18 @@ case "$TERM_VERDICT:$TERM_CODE" in
 		;;
 	UNEXPECTED_SUCCESS:*)
 		echo "FAIL: injected failure reported status=success"
+		fail=1
+		;;
+	DUPLICATE_RESULT_EVENTS:*)
+		echo "FAIL: injected failure emitted more than one terminal result event"
+		fail=1
+		;;
+	RESULT_NOT_LAST:*)
+		echo "FAIL: terminal result was not the final JSON event"
+		fail=1
+		;;
+	NON_JSON_OUTPUT:*)
+		echo "FAIL: backend emitted non-JSON stdout in machine mode"
 		fail=1
 		;;
 	*)

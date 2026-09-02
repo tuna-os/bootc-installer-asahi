@@ -47,6 +47,20 @@ consume harness results, not just tag enumeration
 - [ ] D3 macOS app (SwiftUI, wraps the asahi-installer Python backend)
 - [x] D4 recoveryOS walkthrough UX, LUKS, Wi-Fi handoff (RecoveryWalkthroughView QR & instructions; LUKS fail-closed #20/#47; Wi-Fi prompt at first boot #46)
 
+## Development & testing
+
+Contributor workflow, code style, branch conventions and the full local test
+matrix live in [CONTRIBUTING.md](CONTRIBUTING.md). The short version:
+
+```sh
+shellcheck -S warning scripts/*.sh components/*/*.sh   # lint, as CI runs it
+sudo ./scripts/selftest.sh                             # payload + installer_data.json contract
+./scripts/test-backend-contract.sh                     # pinned asahi-installer --json contract
+./components/bootsahi-agent/test-agent.sh              # install-config.json -> recipe.json
+
+cd macos-app/Bootsahi && swift build -v && swift test -v
+```
+
 ### What's tested and what it proves
 
 The project distinguishes two claims that are easy to conflate (see #27):

@@ -1,0 +1,31 @@
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+charset = utf-8
+trim_trailing_whitespace = true
+
+[*.swift]
+indent_style = space
+indent_size = 4
+
+[{Containerfile,Dockerfile}*]
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false
+
+# No [*.{sh,bash}] block on purpose. This tree has no shell convention to
+# describe: roughly 1070 tab-indented lines against 760 space-indented ones,
+# split file by file (test-agent.sh is all tabs, make-payload.sh all spaces).
+# Declaring either here would make every editor rewrite half the scripts on
+# save, which is churn rather than consistency. Pick one repo-wide first, then
+# add the block.

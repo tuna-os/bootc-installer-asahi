@@ -31,9 +31,11 @@ is an explicit allowlist: every `CatalogEntry` carries a `verified` field
 (`false` by default), and the macOS app only offers entries where it is
 `true`. The shipped `catalog.json` includes both `bonito` and `grouper`,
 marked `verified: true`. Adding a new variant requires both the image and a
-passing harness sweep — the field is the gate, and CI generation must
-consume harness results, not just tag enumeration
-([#41](https://github.com/tuna-os/bootc-installer-asahi/issues/41)).
+passing harness sweep — the field is the gate. That gate is currently
+hand-maintained rather than CI-generated from harness results
+([#70](https://github.com/tuna-os/bootc-installer-asahi/issues/70)); the
+harness sweep itself ([#41](https://github.com/tuna-os/bootc-installer-asahi/issues/41))
+that produced the two verified entries above is closed.
 
 ## Status
 

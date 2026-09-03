@@ -11,7 +11,7 @@ import Foundation
 /// explaining what went wrong. The other fisherman-driving frontends in this
 /// project (tuna-installer-kde, tuna-installer-cosmic) hit the same gap and
 /// fixed it the same way: write the log as it happens, not just show it.
-enum InstallLogWriter {
+final class InstallLogWriter {
     /// One file per run, in the same place `log show` and Console.app expect
     /// third-party app logs: `~/Library/Logs/<bundle-name>/`.
     static func makeDefault() -> InstallLogWriter? {

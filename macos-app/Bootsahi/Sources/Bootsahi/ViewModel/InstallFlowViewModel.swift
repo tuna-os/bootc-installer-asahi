@@ -41,6 +41,7 @@ final class InstallFlowViewModel: ObservableObject {
 
     private var process: InstallerProcess?
     private var e2eTimer: Timer?
+    private var logWriter: InstallLogWriter?
 
     /// Starts polling for drive-mode directives (issue #6 §2). No-op
     /// unless BOOTSAHI_E2E_DRIVE=1 — see E2EDrive's doc comment. Call once,
@@ -191,12 +192,16 @@ final class InstallFlowViewModel: ObservableObject {
     func startBackend(pythonPath: String, mainPyPath: String, workingDirectory: URL) {
         let proc = InstallerProcess(pythonPath: pythonPath, mainPyPath: mainPyPath,
                                      workingDirectory: workingDirectory)
+        logWriter = InstallLogWriter.makeDefault()
         proc.onEvent = { [weak self] event in self?.handle(event) }
         proc.onLog = { [weak self] text in
-            self?.log.append(BackendMessage(level: .plain, text: "[unparsed] \(text)"))
+            let msg = BackendMessage(level: .plain, text: "[unparsed] \(text)")
+            self?.log.append(msg)
+            self?.logWriter?.append(level: msg.level, text: msg.text)
         }
         proc.onTerminate = { [weak self] code in
             guard let self else { return }
+            self.logWriter?.appendTermination(exitCode: code)
             self.finishBackend(exitCode: code)
         }
         process = proc
@@ -334,6 +339,7 @@ final class InstallFlowViewModel: ObservableObject {
         switch event {
         case .message(let msg):
             log.append(msg)
+            logWriter?.append(level: msg.level, text: msg.text)
         case .ask(let ask):
             pendingAsk = ask
         case .result(let result):

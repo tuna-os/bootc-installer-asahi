@@ -26,6 +26,10 @@ CI (`.github/workflows/bootsahi-app-build.yml`) builds and tests this on
 # Lint (matches CI's selftest.yml lint job)
 shellcheck -S warning scripts/*.sh components/*/*.sh
 
+# catalog.json's `verified` field must be backed by a docs/harness-results.json
+# record, not just hand-edited (#70)
+./scripts/validate-catalog.sh
+
 # Harness selftest: payload structure + installer_data.json contract
 sudo ./scripts/selftest.sh
 

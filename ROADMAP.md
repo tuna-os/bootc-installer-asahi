@@ -13,7 +13,7 @@ safe on a real Mac.
 - The SwiftUI app compiles and tests on a hosted macOS runner, but the complete
   flow has not been run on real Apple Silicon hardware.
 - `bonito` and `grouper` are the only catalog entries currently recorded as
-  harness-verified, and both point at GNOME. No other desktop lane is built for
+  harness-verified, and both point at GNOME. No other desktop lane (`kde`, `cosmic`, `niri`, `xfce`) is currently built for
   Apple Silicon in either variant.
 - The catalog is a hand-maintained allowlist. `verified` records a cosign
   identity check made once, on 2026-07-30; it does not assert that the lane is
@@ -25,6 +25,8 @@ safe on a real Mac.
 - Destructive Mac testing remains on hold pending the ordered hardware checks,
   and no Apple Silicon machine or hosted equivalent is currently committed to
   the run that clears the hold.
+- Catalog verification automation and multi-desktop variant parity tracking are being formalized to gate the Q4 2026 Alpha release line.
+
 
 ## Alpha: one reproducible, hardware-verified install
 

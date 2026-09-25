@@ -47,16 +47,21 @@ jobs:
         run: echo "${{ github.token }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Build bootstrap image
+        # Dispatch inputs travel via env, never interpolated into the script
+        # body (bootc-installer-asahi#75).
         env:
           BASE_IMAGE: ${{ inputs.base_image || 'ghcr.io/tuna-os/bonito:gnome-asahi' }}
-        run: ./scripts/build-bootstrap-image.sh "${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}"
+          BOOTSTRAP_TAG: ${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}
+        run: ./scripts/build-bootstrap-image.sh "$BOOTSTRAP_TAG"
 
       # Verify the contract INSIDE the image before publishing, so a broken
       # bootstrap never becomes a payload. Cheaper and clearer than discovering
       # it later from a payload verifier's mounted rootfs.
       - name: Verify the bootstrap contract
+        env:
+          BOOTSTRAP_TAG: ${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}
         run: |
-          TAG="${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}"
+          TAG="$BOOTSTRAP_TAG"
           fail=0
           check() { # description test-command...
             if podman run --rm --entrypoint /bin/sh "$TAG" -c "$2" >/dev/null 2>&1; then
@@ -84,4 +89,6 @@ jobs:
 
       - name: Push
         if: ${{ inputs.push }}
-        run: podman push "${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}"
+        env:
+          BOOTSTRAP_TAG: ${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}
+        run: podman push "$BOOTSTRAP_TAG"

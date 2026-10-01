@@ -1,5 +1,8 @@
 name: bootsahi-app-build
 
+permissions:
+  contents: read
+
 # D3 skeleton was written with no Swift toolchain / macOS host available;
 # nothing in macos-app/Bootsahi had ever been compiled. This uses GitHub's
 # macOS runners (free/unmetered on this public repo) to get real compiler

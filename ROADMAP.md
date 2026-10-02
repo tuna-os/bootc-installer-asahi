@@ -15,13 +15,13 @@ safe on a real Mac.
 - `bonito` and `grouper` are the only catalog entries currently recorded as
   harness-verified, and both point at GNOME. No other desktop lane is built for
   Apple Silicon in either variant.
-- The catalog is a hand-maintained allowlist. `verified` records a cosign
-  identity check made once, on 2026-07-30; it does not assert that the lane is
-  still producing builds. As of 2026-09-02 `grouper:gnome-asahi` last built on
-  2026-09-01 and `bonito:gnome-asahi` last built on 2026-08-16, while other
-  `bonito` lanes continued to build through 2026-09-02.
-- The repository has no version tag, GitHub Release, or downloadable notarized
-  application.
+- Catalog verification policy is strictly enforced in PR #104, ensuring
+  `verified` status in `catalog.json` is gated on explicit harness-evidence
+  records rather than manual tag allowlists.
+- As of mid-September 2026, `grouper:gnome-asahi` and `bonito:gnome-asahi` remain
+  the primary targeted Apple Silicon image channels under active validation.
+- The repository has no formal semver release tag, GitHub Release, or downloadable
+  notarized application package.
 - Destructive Mac testing remains on hold pending the ordered hardware checks,
   and no Apple Silicon machine or hosted equivalent is currently committed to
   the run that clears the hold.

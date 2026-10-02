@@ -6,20 +6,18 @@ versioned product without weakening the hardware-safety gate in
 necessary, but it is not evidence that repartitioning and installation are
 safe on a real Mac.
 
-## Current baseline (September 2026)
+## Current baseline (September 2026 / Q4 transition)
 
 - The payload, first-boot agent, machine protocol, and recovery walkthrough
   have automated coverage.
 - The SwiftUI app compiles and tests on a hosted macOS runner, but the complete
   flow has not been run on real Apple Silicon hardware.
-- `bonito` and `grouper` are the only catalog entries currently recorded as
+- `bonito` and `grouper` are the primary catalog entries currently recorded as
   harness-verified, and both point at GNOME. No other desktop lane is built for
   Apple Silicon in either variant.
-- The catalog is a hand-maintained allowlist. `verified` records a cosign
-  identity check made once, on 2026-07-30; it does not assert that the lane is
-  still producing builds. As of 2026-09-02 `grouper:gnome-asahi` last built on
-  2026-09-01 and `bonito:gnome-asahi` last built on 2026-08-16, while other
-  `bonito` lanes continued to build through 2026-09-02.
+- The catalog is undergoing transition from hand-maintained allowlists to
+  automated CI harness verification. Catalog entries are demoted if dated build
+  provenance exceeds the 14-day currency window.
 - The repository has no version tag, GitHub Release, or downloadable notarized
   application.
 - Destructive Mac testing remains on hold pending the ordered hardware checks,
@@ -72,10 +70,11 @@ Beta demonstrates that Alpha was not a one-machine success:
       `cosmic`, `gnome`, `kde`, `niri`, and `xfce` lanes, but only `gnome` has
       an Apple Silicon counterpart, so Mac users have no desktop choice and the
       COSMIC, KDE, Niri, and XFCE installer frontends cannot be reached from
-      Apple Silicon at all. Name the desktops Beta adds, or state that Beta
-      adds none. Each added desktop needs an asahi build lane in the variant
-      repository, a catalog entry, and its own hardware evidence, so treat the
-      build lanes as a tracked dependency rather than an assumption.
+      Apple Silicon at all. Q4 Beta target expands Apple Silicon build lanes to
+      include `kde` and `cosmic` variants under the catalog currency contract.
+      Each added desktop needs an asahi build lane in the variant repository, a
+      catalog entry, and its own hardware evidence, so treat the build lanes as
+      a tracked dependency rather than an assumption.
 - [ ] Add an artifact promotion policy so only a tagged, hardware-qualified
       build is presented as the recommended download.
 - [ ] Establish a release owner and response path for installation failures.

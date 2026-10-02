@@ -1,4 +1,4 @@
-# TunaOS Asahi Installer — design
+# Bootsahi — design
 
 *Draft 1, 2026-07-23. The "ultimate challenge": a good macOS-based installer for
 bootc Asahi images (all TunaOS variants + Dakota + Bluefin).*

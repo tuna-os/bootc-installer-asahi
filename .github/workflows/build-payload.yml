@@ -49,7 +49,12 @@ jobs:
         run: echo "$GH_TOKEN" | sudo podman login ghcr.io --username "${{ github.actor }}" --password-stdin
 
       - name: Pull image
-        run: sudo podman pull "${{ inputs.image }}"
+        # Dispatch inputs travel via env, never interpolated into the script
+        # body: a value containing shell metacharacters would be parsed as
+        # commands after expression substitution (bootc-installer-asahi#75).
+        env:
+          PAYLOAD_IMAGE: ${{ inputs.image }}
+        run: sudo podman pull "$PAYLOAD_IMAGE"
 
       - name: Free up disk space
         # Desktop images need a 16G loopback disk + pulled layers + the
@@ -62,12 +67,16 @@ jobs:
       - name: Build payload
         env:
           TARGET_MIN_GB: ${{ inputs.target_min_gb }}
-        run: sudo -E ./scripts/make-payload.sh "${{ inputs.image }}" "${{ inputs.name }}" "${{ inputs.bootstrap_size_gb }}"
+          PAYLOAD_IMAGE: ${{ inputs.image }}
+          PAYLOAD_NAME: ${{ inputs.name }}
+          PAYLOAD_SIZE_GB: ${{ inputs.bootstrap_size_gb }}
+        run: sudo -E ./scripts/make-payload.sh "$PAYLOAD_IMAGE" "$PAYLOAD_NAME" "$PAYLOAD_SIZE_GB"
 
       - name: "Test: payload structure, boot chain, rootfs, installer_data"
         env:
           REQUIRE_BOOTSTRAP: ${{ inputs.require_bootstrap && '1' || '0' }}
-        run: sudo -E ./scripts/test-payload.sh "out/${{ inputs.name }}.zip" out/installer_data.json
+          PAYLOAD_NAME: ${{ inputs.name }}
+        run: sudo -E ./scripts/test-payload.sh "out/$PAYLOAD_NAME.zip" out/installer_data.json
 
       - name: Install qemu + U-Boot firmware
         run: |
@@ -75,7 +84,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends qemu-system-arm qemu-utils u-boot-qemu ipxe-qemu parted dosfstools
 
       - name: "Test: boot the reconstructed install (U-Boot EFI chain)"
-        run: sudo ./scripts/test-boot-payload.sh "out/${{ inputs.name }}.zip"
+        env:
+          PAYLOAD_NAME: ${{ inputs.name }}
+        run: sudo ./scripts/test-boot-payload.sh "out/$PAYLOAD_NAME.zip"
 
       - name: Upload boot serial log
         if: always()

@@ -25,6 +25,8 @@ safe on a real Mac.
 - Destructive Mac testing remains on hold pending the ordered hardware checks,
   and no Apple Silicon machine or hosted equivalent is currently committed to
   the run that clears the hold.
+- Multi-desktop roadmap tracking launched in September 2026 targeting KDE, COSMIC,
+  Niri, and XFCE desktop qualification across Asahi variants.
 
 ## Alpha: one reproducible, hardware-verified install
 
@@ -68,14 +70,9 @@ Beta demonstrates that Alpha was not a one-machine success:
       the neighbouring macOS installation.
 - [ ] Publish a compatibility matrix for tested Mac models, macOS hosts,
       catalog images, and installer versions.
-- [ ] Decide the desktop coverage target. Both catalog variants build `base`,
-      `cosmic`, `gnome`, `kde`, `niri`, and `xfce` lanes, but only `gnome` has
-      an Apple Silicon counterpart, so Mac users have no desktop choice and the
-      COSMIC, KDE, Niri, and XFCE installer frontends cannot be reached from
-      Apple Silicon at all. Name the desktops Beta adds, or state that Beta
-      adds none. Each added desktop needs an asahi build lane in the variant
-      repository, a catalog entry, and its own hardware evidence, so treat the
-      build lanes as a tracked dependency rather than an assumption.
+- [ ] Expand desktop coverage beyond GNOME: track upstream `tuna-os/tunaos` Asahi
+      build matrix for KDE, COSMIC, Niri, XFCE, and Base. Each added desktop requires
+      its own catalog entry, harness evidence, and hardware verification before promotion.
 - [ ] Add an artifact promotion policy so only a tagged, hardware-qualified
       build is presented as the recommended download.
 - [ ] Establish a release owner and response path for installation failures.

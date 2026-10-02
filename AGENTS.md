@@ -53,14 +53,13 @@ enforcing it. Change one and the disk selftest can validate against a
 different fisherman than the bootstrap ships.
 
 All three currently pin `d6b21dd`, the **head commit of
-[fisherman#70](https://github.com/tuna-os/fisherman/pull/70)**, with a
+[fisherman#70](https://github.com/projectbluefin/fisherman/pull/70)**, with a
 TEMPORARY comment saying to move to the merged SHA on `dev` once it lands.
 It landed on 2026-07-30, squash-merged — so `d6b21dd` is *not* an ancestor of
 `dev`; it survives only because the PR branch
 `fix/custom-layout-ext4-verity` still exists. Deleting that branch breaks a
 fresh `git clone` + `git checkout <sha>` in both workflows and in the
-bootstrap build. Also note fisherman's canonical home moved to
-`projectbluefin/fisherman`; the URLs here still use the old `tuna-os` path.
+bootstrap build. Note that fisherman's canonical home is `projectbluefin/fisherman`.
 
 Re-pinning is a maintainer decision, not a mechanical bump: it changes what
 gets written to a user's disk on hardware CI cannot fully exercise.

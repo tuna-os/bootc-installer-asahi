@@ -1,0 +1,72 @@
+name: Bootstrap boot (opt-in)
+
+# Issue #74: run scripts/test-bootstrap-boot.sh in CI on demand. It builds the
+# real bootstrap image, packages it as a payload, and boots it under U-Boot.
+#
+# Runner selection (docs/E2E-RUNNERS.md):
+# - vars.BOOTSTRAP_BOOT_RUNSON_SPEC set -> RunsOn on AWS. The value is the
+#   label spec after the routing key, e.g.
+#   family=c7g.metal/image=ubuntu24-full-arm64/volume=120gb/spot=false
+#   Only Graviton .metal instances expose /dev/kvm on arm64; EC2 nested-virt
+#   is x86-only. The expression prepends the per-run routing key RunsOn needs.
+# - unset -> ubuntu-24.04-arm, which has no /dev/kvm, so qemu runs under TCG.
+#
+# workflow_dispatch only: a full build plus boot is ~30-60 minutes and, on
+# RunsOn, a bare-metal instance. Never wire it to every PR.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_image:
+        description: "Base image to derive the bootstrap from"
+        default: "ghcr.io/tuna-os/bonito:gnome-asahi"
+        type: string
+      boot_timeout:
+        description: "Seconds to wait for the boot marker"
+        default: "2400"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  boot:
+    runs-on: >-
+      ${{ vars.BOOTSTRAP_BOOT_RUNSON_SPEC != '' &&
+          format('runs-on={0}/{1}', github.run_id, vars.BOOTSTRAP_BOOT_RUNSON_SPEC) ||
+          'ubuntu-24.04-arm' }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            podman jq gdisk unzip zip parted dosfstools \
+            qemu-system-arm qemu-utils u-boot-qemu ipxe-qemu
+
+      # The image build, the payload and the reconstructed disk need ~20 GB
+      # next to each other; the hosted runner does not have that by default.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Report acceleration mode
+        run: |
+          if [ -e /dev/kvm ]; then mode=kvm; else mode=tcg; fi
+          echo "accel=$mode on $(uname -m), $(nproc) CPUs" | tee -a "$GITHUB_STEP_SUMMARY"
+          # The script opens /dev/kvm as root; make it usable regardless.
+          [ -e /dev/kvm ] && sudo chmod 666 /dev/kvm || true
+
+      - name: Build, package and boot the bootstrap
+        env:
+          BASE_IMAGE: ${{ inputs.base_image }}
+          BOOT_TIMEOUT: ${{ inputs.boot_timeout }}
+        run: sudo -E env "PATH=$PATH" ./scripts/test-bootstrap-boot.sh

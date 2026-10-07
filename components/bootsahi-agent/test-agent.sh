@@ -599,6 +599,15 @@ else
 	fi
 fi
 
+echo
+echo "==> device resolution & partition safety unit tests"
+if "$HERE/test-agent-device.sh"; then
+	echo "ok: device library unit tests passed"
+else
+	echo "FAIL: device library unit tests failed"
+	fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then
 	echo "SELFTEST FAILED"
 	exit 1

@@ -122,6 +122,9 @@ if [ -f "$OSROOT/usr/share/bootsahi/bootstrap-release" ]; then
 	[ -r "$OSROOT/usr/libexec/bootsahi-agent-recipe.sh" ] &&
 		ok "recipe adapter installed" ||
 		bad "recipe adapter missing — bootsahi-agent cannot start"
+	[ -r "$OSROOT/usr/libexec/bootsahi-agent-device.sh" ] &&
+		ok "device adapter installed" ||
+		bad "device adapter missing — bootsahi-agent cannot start"
 	[ -x "$OSROOT/usr/libexec/asahi-bootbin-sync" ] &&
 		ok "asahi-bootbin-sync installed" || bad "asahi-bootbin-sync missing"
 	[ -f "$OSROOT/usr/lib/systemd/system/bootsahi-agent.service" ] &&

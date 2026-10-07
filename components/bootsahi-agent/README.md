@@ -59,7 +59,9 @@ disk-auto-partition path.
 
 ## Ship it in every bootsahi bootstrap image
 
-- script → `/usr/libexec/bootsahi-agent`
+- main orchestrator → `/usr/libexec/bootsahi-agent`
+- recipe adapter library → `/usr/libexec/bootsahi-agent-recipe.sh`
+- device resolution library → `/usr/libexec/bootsahi-agent-device.sh`
 - unit → `/usr/lib/systemd/system/bootsahi-agent.service` (+ preset enable,
   `WantedBy=multi-user.target`)
 

@@ -70,6 +70,126 @@ find_install_config() {
     return 0
 }
 
+# find_install_config_schema locates install-config.schema.json.
+# Production installs it to /usr/share/bootsahi/install-config.schema.json;
+# dev/test checks BOOTSAHI_SCHEMA_PATH or AGENT_LIB_DIR.
+find_install_config_schema() {
+    if [ -n "${BOOTSAHI_SCHEMA_PATH:-}" ] && [ -f "${BOOTSAHI_SCHEMA_PATH}" ]; then
+        echo "${BOOTSAHI_SCHEMA_PATH}"
+        return 0
+    fi
+    if [ -f "/usr/share/bootsahi/install-config.schema.json" ]; then
+        echo "/usr/share/bootsahi/install-config.schema.json"
+        return 0
+    fi
+    if [ -f "$AGENT_LIB_DIR/install-config.schema.json" ]; then
+        echo "$AGENT_LIB_DIR/install-config.schema.json"
+        return 0
+    fi
+    return 0
+}
+
+# validate_install_config_schema evaluates install-config.json against the
+# shipped JSON Schema before any network, secret, or device operations run (issue #121).
+# Both root and user objects enforce additionalProperties: false to prevent unexpected
+# keys or plaintext secrets on the ESP. When BOOTSAHI_ALLOW_UNVERIFIED=1 is set,
+# cosignIdentity and cosignIssuer are excused from required checks.
+validate_install_config_schema() {
+    local cfg="$1"
+    local schema_file
+    schema_file=$(find_install_config_schema)
+
+    if [ -z "$schema_file" ]; then
+        log "WARNING: install-config.schema.json not found; falling back to basic field validation"
+        return 0
+    fi
+
+    local allow_unverified=false
+    if [ "${BOOTSAHI_ALLOW_UNVERIFIED:-0}" = "1" ]; then
+        allow_unverified=true
+    fi
+
+    local errors
+    errors=$(jq -r --slurpfile schema "$schema_file" --argjson allow_unverified "$allow_unverified" '
+        def validate(s):
+          if type != "object" then "root must be an object"
+          else
+            (( (s.required - (if $allow_unverified then ["cosignIdentity", "cosignIssuer"] else [] end) - (keys // [])) ) as $missing |
+              if ($missing | length) > 0 then
+                "install-config.json missing required field: " + ($missing | join(", "))
+              else empty end),
+            (if s.additionalProperties == false then
+              (((keys // []) - (s.properties | keys)) as $extra |
+                if ($extra | length) > 0 then
+                  "install-config.json contains unexpected field: " + ($extra | join(", "))
+                else empty end)
+              else empty end),
+            (if has("targetImgref") and (.targetImgref | type != "string" or length == 0) then
+              "targetImgref must be a non-empty string" else empty end),
+            (if has("filesystem") and (.filesystem as $fs | ["xfs", "ext4", "btrfs"] | index($fs) | not) then
+              "filesystem must be one of xfs, ext4, btrfs (got " + (.filesystem | tostring) + ")" else empty end),
+            (if has("hostname") and (.hostname | type != "string" or length == 0) then
+              "hostname must be a non-empty string" else empty end),
+            (if has("cosignIdentity") and (.cosignIdentity | type != "string" or length == 0) then
+              "cosignIdentity must be a non-empty string" else empty end),
+            (if has("cosignIssuer") and (.cosignIssuer | type != "string" or length == 0) then
+              "cosignIssuer must be a non-empty string" else empty end),
+            (if has("sshEnabled") and (.sshEnabled != null and (.sshEnabled | type != "boolean")) then
+              "sshEnabled must be a boolean" else empty end),
+            (if has("rootPartition") and (.rootPartition != null and (.rootPartition | type != "string")) then
+              "rootPartition must be a string" else empty end),
+            (if has("espPartition") and (.espPartition != null and (.espPartition | type != "string")) then
+              "espPartition must be a string" else empty end),
+            (if has("encryption") and .encryption != null then
+              if (.encryption | type != "object") then "encryption must be an object"
+              else
+                .encryption as $e |
+                (((($e | keys) - ["type"]) as $extra |
+                  if ($extra | length) > 0 then "encryption contains unexpected field: " + ($extra | join(", "))
+                  else empty end),
+                 (if ($e | has("type") | not) then "encryption missing required field: type"
+                  elif ($e.type as $t | ["none", "luks-passphrase", "tpm2-luks", "tpm2-luks-passphrase"] | index($t) | not) then
+                    "encryption.type must be one of none, luks-passphrase, tpm2-luks, tpm2-luks-passphrase"
+                  else empty end))
+              end
+            else empty end),
+            (if has("wifi") and .wifi != null then
+              if (.wifi | type != "object") then "wifi must be an object"
+              else
+                .wifi as $w |
+                (((($w | keys) - ["ssid"]) as $extra |
+                  if ($extra | length) > 0 then "wifi contains unexpected field: " + ($extra | join(", "))
+                  else empty end),
+                 (if ($w | has("ssid")) and ($w.ssid | type != "string") then "wifi.ssid must be a string" else empty end))
+              end
+            else empty end),
+            (if has("user") and .user != null then
+              if (.user | type != "object") then "user must be an object"
+              else
+                .user as $u |
+                (((($u | keys) - ["username", "fullname", "password", "groups"]) as $extra |
+                  if ($extra | length) > 0 then "user contains unexpected field: " + ($extra | join(", "))
+                  else empty end),
+                 (if ($u | has("username")) and ($u.username | type != "string") then "user.username must be a string" else empty end),
+                 (if ($u | has("fullname")) and ($u.fullname != null and ($u.fullname | type != "string")) then "user.fullname must be a string" else empty end),
+                 (if ($u | has("password")) and ($u.password != null and ($u.password | type != "string")) then "user.password must be a string" else empty end),
+                 (if ($u | has("groups")) and ($u.groups != null and (($u.groups | type != "array") or ([$u.groups[] | type != "string"] | any))) then "user.groups must be an array of strings" else empty end))
+              end
+            else empty end)
+          end;
+        validate($schema[0])
+    ' "$cfg" 2>>"$LOG_FILE" || true)
+
+    if [ -n "$errors" ]; then
+        while IFS= read -r err; do
+            [ -n "$err" ] && log "$err"
+        done <<< "$errors"
+        return 1
+    fi
+    return 0
+}
+
+
 # prompt_secret asks the user for a secret at first boot and prints it on stdout.
 #
 # This unit is Type=oneshot and runs Before=greetd, so it has no controlling
@@ -588,6 +708,10 @@ main() {
 
     if ! jq empty "$cfg" 2>>"$LOG_FILE"; then
         log "install-config.json is not valid JSON"
+        exit 1
+    fi
+
+    if ! validate_install_config_schema "$cfg"; then
         exit 1
     fi
 

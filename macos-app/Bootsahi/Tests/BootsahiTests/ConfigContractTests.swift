@@ -204,16 +204,16 @@ final class ConfigContractTests: XCTestCase {
             "the typed password survived into the config that goes to the ESP")
     }
 
-    /// The schema pins `additionalProperties: false` on the two objects that
-    /// carry secrets in every naive design. If that ever relaxes, the agent
-    /// stops being able to tell "SSID only" from "SSID plus PSK" — and the
-    /// refusal that protects the user becomes unenforceable at the schema
-    /// layer. Cheap to assert, and it fails loudly at the moment of relaxation
-    /// rather than at the moment of exploitation.
+    /// The schema pins `additionalProperties: false` on the document root and
+    /// objects (user, wifi, encryption) to ensure unknown keys and secrets cannot
+    /// be passed in the clear to the world-readable ESP or survive into runtime.
     func testSecretBearingObjectsStayClosedInTheSchema() throws {
         let schema = try agentSchema()
+        XCTAssertEqual(
+            schema["additionalProperties"] as? Bool, false,
+            "root schema no longer forbids additional properties — unknown keys would validate")
         let props = schema["properties"] as? [String: Any] ?? [:]
-        for name in ["wifi", "encryption"] {
+        for name in ["wifi", "encryption", "user"] {
             let obj = props[name] as? [String: Any] ?? [:]
             XCTAssertEqual(
                 obj["additionalProperties"] as? Bool, false,

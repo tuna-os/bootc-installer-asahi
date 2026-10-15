@@ -18,5 +18,5 @@ backend-contract:
 agent:
     ./components/bootsahi-agent/test-agent.sh
 
-payload:
-    sudo ./scripts/test-payload.sh
+payload zip data:
+    sudo ./scripts/test-payload.sh {{zip}} {{data}}

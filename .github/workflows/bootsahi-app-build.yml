@@ -40,7 +40,7 @@ jobs:
       run:
         working-directory: macos-app/Bootsahi
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: swift --version
         run: swift --version
       - name: swift build
@@ -70,7 +70,7 @@ jobs:
       run:
         working-directory: macos-app/Bootsahi
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: capture every screen
         env:
           BOOTSAHI_CAPTURE_DIR: ${{ github.workspace }}/docs/screenshots
@@ -140,7 +140,7 @@ jobs:
       run:
         working-directory: macos-app/Bootsahi
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: swift --version
         run: swift --version
       # Proves the compiler gate is actually open here — otherwise a silently

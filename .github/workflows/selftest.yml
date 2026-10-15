@@ -22,7 +22,7 @@ jobs:
   lint:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: shellcheck
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
@@ -42,7 +42,7 @@ jobs:
   selftest:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # jq is needed by BOTH steps below: selftest.sh's installer_data layout
       # cases build their fixtures with it, and test-agent.sh drives the agent,
       # which uses jq throughout. Installed up front rather than inside the
@@ -107,7 +107,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq gdisk podman dosfstools
       # bootc install writes a full image to a loop file; the stock runner does

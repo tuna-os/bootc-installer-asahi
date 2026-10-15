@@ -96,17 +96,23 @@ find_install_config_schema() {
 
 # validate_install_config_schema evaluates install-config.json against the
 # shipped JSON Schema before any network, secret, or device operations run (issue #121).
-# Both root and user objects enforce additionalProperties: false to prevent unexpected
-# keys or plaintext secrets on the ESP. When BOOTSAHI_ALLOW_UNVERIFIED=1 is set,
-# cosignIdentity and cosignIssuer are excused from required checks.
+# Every rule comes from the schema itself — the draft-07 subset it uses: type,
+# enum, required, properties, additionalProperties:false and array items — so
+# the schema and the agent cannot drift apart. A null value is treated as an
+# absent key (the app omits unset optionals). Required strings must also be
+# non-empty. When BOOTSAHI_ALLOW_UNVERIFIED=1 is set, cosignIdentity and
+# cosignIssuer are excused from the required checks.
+#
+# Fails closed: a missing schema or a jq failure is a refusal, not a pass. The
+# schema ships in the bootstrap image, so its absence is a packaging defect.
 validate_install_config_schema() {
     local cfg="$1"
     local schema_file
     schema_file=$(find_install_config_schema)
 
     if [ -z "$schema_file" ]; then
-        log "WARNING: install-config.schema.json not found; falling back to basic field validation"
-        return 0
+        log "install-config.schema.json not found; refusing to install from an unvalidated config"
+        return 1
     fi
 
     local allow_unverified=false
@@ -115,75 +121,42 @@ validate_install_config_schema() {
     fi
 
     local errors
-    errors=$(jq -r --slurpfile schema "$schema_file" --argjson allow_unverified "$allow_unverified" '
-        def validate(s):
-          if type != "object" then "root must be an object"
-          else
-            (( (s.required - (if $allow_unverified then ["cosignIdentity", "cosignIssuer"] else [] end) - (keys // [])) ) as $missing |
-              if ($missing | length) > 0 then
-                "install-config.json missing required field: " + ($missing | join(", "))
-              else empty end),
-            (if s.additionalProperties == false then
-              (((keys // []) - (s.properties | keys)) as $extra |
-                if ($extra | length) > 0 then
-                  "install-config.json contains unexpected field: " + ($extra | join(", "))
-                else empty end)
-              else empty end),
-            (if has("targetImgref") and (.targetImgref | type != "string" or length == 0) then
-              "targetImgref must be a non-empty string" else empty end),
-            (if has("filesystem") and (.filesystem as $fs | ["xfs", "ext4", "btrfs"] | index($fs) | not) then
-              "filesystem must be one of xfs, ext4, btrfs (got " + (.filesystem | tostring) + ")" else empty end),
-            (if has("hostname") and (.hostname | type != "string" or length == 0) then
-              "hostname must be a non-empty string" else empty end),
-            (if has("cosignIdentity") and (.cosignIdentity | type != "string" or length == 0) then
-              "cosignIdentity must be a non-empty string" else empty end),
-            (if has("cosignIssuer") and (.cosignIssuer | type != "string" or length == 0) then
-              "cosignIssuer must be a non-empty string" else empty end),
-            (if has("sshEnabled") and (.sshEnabled != null and (.sshEnabled | type != "boolean")) then
-              "sshEnabled must be a boolean" else empty end),
-            (if has("rootPartition") and (.rootPartition != null and (.rootPartition | type != "string")) then
-              "rootPartition must be a string" else empty end),
-            (if has("espPartition") and (.espPartition != null and (.espPartition | type != "string")) then
-              "espPartition must be a string" else empty end),
-            (if has("encryption") and .encryption != null then
-              if (.encryption | type != "object") then "encryption must be an object"
-              else
-                .encryption as $e |
-                (((($e | keys) - ["type"]) as $extra |
-                  if ($extra | length) > 0 then "encryption contains unexpected field: " + ($extra | join(", "))
-                  else empty end),
-                 (if ($e | has("type") | not) then "encryption missing required field: type"
-                  elif ($e.type as $t | ["none", "luks-passphrase", "tpm2-luks", "tpm2-luks-passphrase"] | index($t) | not) then
-                    "encryption.type must be one of none, luks-passphrase, tpm2-luks, tpm2-luks-passphrase"
-                  else empty end))
-              end
+    if ! errors=$(jq -r --slurpfile schema "$schema_file" --argjson allow_unverified "$allow_unverified" '
+        def type_ok($t):
+          if $t == "integer" then type == "number" and . == floor
+          else type == $t end;
+        def present: with_entries(select(.value != null));
+        def validate($s; $where; $excused):
+          if ($s.type != null) and (type_ok($s.type) | not) then
+            "\($where) must be of type \($s.type)"
+          elif ($s.enum != null) and (. as $v | $s.enum | index([$v]) | not) then
+            "\($where) must be one of \($s.enum | join(", ")) (got \(tostring))"
+          elif type == "object" then
+            present as $obj |
+            ((($s.required // []) - $excused) as $req |
+              (($req - ($obj | keys)) as $missing |
+                if ($missing | length) > 0 then
+                  "\($where) missing required field: \($missing | join(", "))"
+                else empty end),
+              ($req[] as $k | select($obj[$k] == "") |
+                "\($where).\($k) must be a non-empty string")),
+            (if $s.additionalProperties == false then
+              (($obj | keys) - ($s.properties // {} | keys)) as $extra |
+              if ($extra | length) > 0 then
+                "\($where) contains unexpected field: \($extra | join(", "))"
+              else empty end
             else empty end),
-            (if has("wifi") and .wifi != null then
-              if (.wifi | type != "object") then "wifi must be an object"
-              else
-                .wifi as $w |
-                (((($w | keys) - ["ssid"]) as $extra |
-                  if ($extra | length) > 0 then "wifi contains unexpected field: " + ($extra | join(", "))
-                  else empty end),
-                 (if ($w | has("ssid")) and ($w.ssid | type != "string") then "wifi.ssid must be a string" else empty end))
-              end
-            else empty end),
-            (if has("user") and .user != null then
-              if (.user | type != "object") then "user must be an object"
-              else
-                .user as $u |
-                (((($u | keys) - ["username", "fullname", "password", "groups"]) as $extra |
-                  if ($extra | length) > 0 then "user contains unexpected field: " + ($extra | join(", "))
-                  else empty end),
-                 (if ($u | has("username")) and ($u.username | type != "string") then "user.username must be a string" else empty end),
-                 (if ($u | has("fullname")) and ($u.fullname != null and ($u.fullname | type != "string")) then "user.fullname must be a string" else empty end),
-                 (if ($u | has("password")) and ($u.password != null and ($u.password | type != "string")) then "user.password must be a string" else empty end),
-                 (if ($u | has("groups")) and ($u.groups != null and (($u.groups | type != "array") or ([$u.groups[] | type != "string"] | any))) then "user.groups must be an array of strings" else empty end))
-              end
-            else empty end)
-          end;
-        validate($schema[0])
-    ' "$cfg" 2>>"$LOG_FILE" || true)
+            ($obj | to_entries[] | . as $e | ($s.properties // {})[$e.key] as $ps |
+              select($ps != null) | $e.value | validate($ps; "\($where).\($e.key)"; []))
+          elif type == "array" and $s.items != null then
+            to_entries[] | . as $e | $e.value | validate($s.items; "\($where)[\($e.key)]"; [])
+          else empty end;
+        validate($schema[0]; "install-config.json";
+          if $allow_unverified then ["cosignIdentity", "cosignIssuer"] else [] end)
+    ' "$cfg" 2>>"$LOG_FILE"); then
+        log "install-config.json could not be validated against $schema_file (jq failed); refusing"
+        return 1
+    fi
 
     if [ -n "$errors" ]; then
         while IFS= read -r err; do

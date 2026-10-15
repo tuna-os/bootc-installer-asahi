@@ -39,7 +39,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-26
     defaults:
       run:
         working-directory: macos-app/Bootsahi
@@ -67,7 +67,7 @@ jobs:
   # that does not compile is not a thing that can exist.
   screenshots:
     needs: build
-    runs-on: macos-14
+    runs-on: macos-26
     permissions:
       contents: write
     defaults:

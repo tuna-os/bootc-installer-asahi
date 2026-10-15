@@ -38,17 +38,58 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # The pre-Tahoe gate. macos-14 (Xcode 15.4 / Swift 5.10) used to provide this
+  # by being old; it retires 2026-11-02, so the job now pins the properties it
+  # was standing in for instead of inheriting them from the host:
+  #   - a pre-6.2 Swift toolchain (newest installed Xcode 16.x), so the
+  #     `#else` side of `#if compiler(>=6.2)` in WizardChrome.swift is what
+  #     gets compiled here — build-tahoe below covers the other side;
+  #   - the macOS 13 deployment floor (asahi-installer's MIN_MACOS_VERSION),
+  #     set explicitly and asserted on the built binary so a newer host SDK
+  #     cannot quietly raise it.
   build:
-    runs-on: macos-14
+    runs-on: macos-15
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
     defaults:
       run:
         working-directory: macos-app/Bootsahi
     steps:
       - uses: actions/checkout@v7
+      - name: select pre-6.2 Xcode
+        run: |
+          xcode=$(printf '%s\n' /Applications/Xcode_16*.app | sort -V | tail -n1)
+          [ -d "$xcode" ] || { echo "::error::no Xcode 16.x on this runner"; exit 1; }
+          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
       - name: swift --version
         run: swift --version
+      - name: assert the pre-Tahoe path is the one compiled
+        run: |
+          cat > /tmp/gatecheck.swift <<'EOF'
+          #if compiler(>=6.2)
+          print("GLASS_PATH_COMPILED")
+          #else
+          print("GLASS_PATH_SKIPPED")
+          #endif
+          EOF
+          out=$(swift /tmp/gatecheck.swift)
+          echo "$out"
+          if [ "$out" != "GLASS_PATH_SKIPPED" ]; then
+            echo "::error::build job is on a Swift 6.2+ toolchain, so the pre-Tahoe"
+            echo "::error::fallback surface is no longer compiled anywhere in CI."
+            exit 1
+          fi
       - name: swift build
         run: swift build -v
+      - name: assert macOS 13 deployment floor
+        run: |
+          bin="$(swift build --show-bin-path)/Bootsahi"
+          minos=$(otool -l "$bin" | awk '/LC_BUILD_VERSION/{f=1} f&&$1=="minos"{print $2; exit}')
+          echo "minos=$minos"
+          if [ "$minos" != "13.0" ]; then
+            echo "::error::Bootsahi built with minos=$minos, expected 13.0"
+            exit 1
+          fi
       - name: swift test
         run: swift test -v
 
@@ -69,7 +110,9 @@ jobs:
   # that does not compile is not a thing that can exist.
   screenshots:
     needs: build
-    runs-on: macos-14
+    runs-on: macos-15
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
     permissions:
       contents: read
     defaults:
@@ -77,6 +120,11 @@ jobs:
         working-directory: macos-app/Bootsahi
     steps:
       - uses: actions/checkout@v7
+      - name: select pre-6.2 Xcode
+        run: |
+          xcode=$(printf '%s\n' /Applications/Xcode_16*.app | sort -V | tail -n1)
+          [ -d "$xcode" ] || { echo "::error::no Xcode 16.x on this runner"; exit 1; }
+          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
       - name: capture every screen
         env:
           BOOTSAHI_CAPTURE_DIR: ${{ github.workspace }}/docs/screenshots
@@ -107,8 +155,9 @@ jobs:
 
   # The Liquid Glass surface in WizardChrome.swift is behind `#if
   # compiler(>=6.2)` because glassEffect needs the macOS 26 SDK to COMPILE, not
-  # merely macOS 26 to run. On the macos-14 runner above that branch is excluded
-  # by the preprocessor — which means the job above cannot tell you whether it
+  # merely macOS 26 to run. The build job above deliberately pins a pre-6.2
+  # toolchain, so that branch is excluded by the preprocessor there — which
+  # means the job above cannot tell you whether it
   # builds. Code that no CI configuration ever compiles is the same "gate that
   # never fires" shape this repo has been fixing all along, so it gets a runner
   # that actually reaches it.

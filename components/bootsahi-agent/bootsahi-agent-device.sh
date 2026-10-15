@@ -6,6 +6,15 @@
 # test harnesses. It provides block-device resolution and target safety guards
 # behind an explicit interface, decoupled from first-boot lifecycle management.
 
+# ── Target resolution by PARTUUID (issue #22) ────────────────────────────────
+# The macOS app cannot name the target: it knows the partition as disk0s5 while
+# this agent sees nvme0n1p5. And a partition ORDINAL must never be trusted —
+# since ADR 0001 there are two Linux partitions, and picking the wrong one means
+# mkfs on the filesystem this agent is running from.
+#
+# So the backend records each partition it created (PARTUUID + declared role)
+# into <ESP>/asahi/stub_info.json, and we resolve from that. PARTUUID is stable
+# across macOS/Linux and immune to renumbering.
 PARTUUID_DIR="${BOOTSAHI_PARTUUID_DIR:-/dev/disk/by-partuuid}"
 
 # Provide a fallback logger if not sourced within bootsahi-agent.sh
@@ -265,7 +274,8 @@ verify_target() {
 # guess, because the failure mode of guessing is an unrecoverable machine.
 #
 # Emits "<target_dev> <esp_dev>" to stdout on success and returns 0.
-# Logs failure diagnostics and returns 1 on refusal.
+# Logs failure diagnostics and returns 1 on refusal. Callers parse stdout, so
+# every diagnostic in this call chain MUST go through log/stderr, never stdout.
 resolve_install_devices() {
     local cfg="$1"
     local stub target_dev esp_dev bootstrap_dev
@@ -286,7 +296,7 @@ resolve_install_devices() {
         # mounted (read-only media, selftest loop devices); refusing on device
         # identity makes the swap impossible to miss (#22).
         if jq -e '.partitions[]? | select(.role == "bootstrap")' "$stub" >/dev/null 2>&1; then
-            bootstrap_dev=$(resolve_role_device "$stub" bootstrap 2>/dev/null || true)
+            bootstrap_dev=$(resolve_role_device "$stub" bootstrap) || bootstrap_dev=""
             if [ -n "$bootstrap_dev" ] && [ "$(block_device_id "$target_dev")" = "$(block_device_id "$bootstrap_dev")" ]; then
                 log "resolved target $target_dev is the bootstrap partition itself; refusing (swapped PARTUUID)"
                 return 1
@@ -299,6 +309,19 @@ resolve_install_devices() {
         printf '%s %s\n' "$target_dev" "$esp_dev"
         return 0
     elif [ "${BOOTSAHI_ALLOW_CONFIG_DEVICES:-0}" = "1" ]; then
+        # Explicitly-enabled dev/test path only. It is gated behind an env var
+        # rather than merely warned about because the safety argument for it is
+        # UNVERIFIED: refuse_active_root screens the device backing /, which
+        # covers the bootstrap partition only if the bootstrap boots directly
+        # from it. Under an initramfs pivot or a composefs deployment, / may
+        # report something other than the bootstrap partition device — and then
+        # nothing stops fisherman being handed the bootstrap.
+        #
+        # We cannot test that today: no bootstrap image exists yet (issue #27),
+        # so no one has ever observed what / reports on a real bootsahi boot.
+        # An unverifiable assumption guarding an unrecoverable operation is not
+        # a safety property, so production must not be able to reach this path
+        # by accident — only by someone typing the variable.
         target_dev=$(jq -r '.rootPartition // empty' "$cfg")
         esp_dev=$(jq -r '.espPartition // empty' "$cfg")
         if [ -z "$target_dev" ] || [ -z "$esp_dev" ]; then

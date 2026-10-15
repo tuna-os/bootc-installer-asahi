@@ -1,0 +1,8 @@
+# actionlint v1.7.12 (latest release) predates the ubuntu-26.04 GitHub-hosted
+# runner images (GA 2026-09-17) and reports them as "label is unknown".
+# Support landed upstream in rhysd/actionlint@bfc8e29 but is unreleased; drop
+# these entries once a release containing that commit ships.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm

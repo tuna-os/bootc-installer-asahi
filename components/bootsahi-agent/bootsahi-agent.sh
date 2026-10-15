@@ -75,6 +75,99 @@ find_install_config() {
     return 0
 }
 
+# find_install_config_schema locates install-config.schema.json.
+# Production installs it to /usr/share/bootsahi/install-config.schema.json;
+# dev/test checks BOOTSAHI_SCHEMA_PATH or AGENT_LIB_DIR.
+find_install_config_schema() {
+    if [ -n "${BOOTSAHI_SCHEMA_PATH:-}" ] && [ -f "${BOOTSAHI_SCHEMA_PATH}" ]; then
+        echo "${BOOTSAHI_SCHEMA_PATH}"
+        return 0
+    fi
+    if [ -f "/usr/share/bootsahi/install-config.schema.json" ]; then
+        echo "/usr/share/bootsahi/install-config.schema.json"
+        return 0
+    fi
+    if [ -f "$AGENT_LIB_DIR/install-config.schema.json" ]; then
+        echo "$AGENT_LIB_DIR/install-config.schema.json"
+        return 0
+    fi
+    return 0
+}
+
+# validate_install_config_schema evaluates install-config.json against the
+# shipped JSON Schema before any network, secret, or device operations run (issue #121).
+# Every rule comes from the schema itself — the draft-07 subset it uses: type,
+# enum, required, properties, additionalProperties:false and array items — so
+# the schema and the agent cannot drift apart. A null value is treated as an
+# absent key (the app omits unset optionals). Required strings must also be
+# non-empty. When BOOTSAHI_ALLOW_UNVERIFIED=1 is set, cosignIdentity and
+# cosignIssuer are excused from the required checks.
+#
+# Fails closed: a missing schema or a jq failure is a refusal, not a pass. The
+# schema ships in the bootstrap image, so its absence is a packaging defect.
+validate_install_config_schema() {
+    local cfg="$1"
+    local schema_file
+    schema_file=$(find_install_config_schema)
+
+    if [ -z "$schema_file" ]; then
+        log "install-config.schema.json not found; refusing to install from an unvalidated config"
+        return 1
+    fi
+
+    local allow_unverified=false
+    if [ "${BOOTSAHI_ALLOW_UNVERIFIED:-0}" = "1" ]; then
+        allow_unverified=true
+    fi
+
+    local errors
+    if ! errors=$(jq -r --slurpfile schema "$schema_file" --argjson allow_unverified "$allow_unverified" '
+        def type_ok($t):
+          if $t == "integer" then type == "number" and . == floor
+          else type == $t end;
+        def present: with_entries(select(.value != null));
+        def validate($s; $where; $excused):
+          if ($s.type != null) and (type_ok($s.type) | not) then
+            "\($where) must be of type \($s.type)"
+          elif ($s.enum != null) and (. as $v | $s.enum | index([$v]) | not) then
+            "\($where) must be one of \($s.enum | join(", ")) (got \(tostring))"
+          elif type == "object" then
+            present as $obj |
+            ((($s.required // []) - $excused) as $req |
+              (($req - ($obj | keys)) as $missing |
+                if ($missing | length) > 0 then
+                  "\($where) missing required field: \($missing | join(", "))"
+                else empty end),
+              ($req[] as $k | select($obj[$k] == "") |
+                "\($where).\($k) must be a non-empty string")),
+            (if $s.additionalProperties == false then
+              (($obj | keys) - ($s.properties // {} | keys)) as $extra |
+              if ($extra | length) > 0 then
+                "\($where) contains unexpected field: \($extra | join(", "))"
+              else empty end
+            else empty end),
+            ($obj | to_entries[] | . as $e | ($s.properties // {})[$e.key] as $ps |
+              select($ps != null) | $e.value | validate($ps; "\($where).\($e.key)"; []))
+          elif type == "array" and $s.items != null then
+            to_entries[] | . as $e | $e.value | validate($s.items; "\($where)[\($e.key)]"; [])
+          else empty end;
+        validate($schema[0]; "install-config.json";
+          if $allow_unverified then ["cosignIdentity", "cosignIssuer"] else [] end)
+    ' "$cfg" 2>>"$LOG_FILE"); then
+        log "install-config.json could not be validated against $schema_file (jq failed); refusing"
+        return 1
+    fi
+
+    if [ -n "$errors" ]; then
+        while IFS= read -r err; do
+            [ -n "$err" ] && log "$err"
+        done <<< "$errors"
+        return 1
+    fi
+    return 0
+}
+
+
 # prompt_secret asks the user for a secret at first boot and prints it on stdout.
 #
 # This unit is Type=oneshot and runs Before=greetd, so it has no controlling
@@ -344,6 +437,10 @@ main() {
 
     if ! jq empty "$cfg" 2>>"$LOG_FILE"; then
         log "install-config.json is not valid JSON"
+        exit 1
+    fi
+
+    if ! validate_install_config_schema "$cfg"; then
         exit 1
     fi
 

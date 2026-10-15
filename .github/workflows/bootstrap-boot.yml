@@ -29,6 +29,12 @@ on:
 permissions:
   contents: read
 
+# One boot at a time per ref; a second dispatch queues instead of cancelling a
+# 30-60 minute run (and, on RunsOn, a bare-metal instance) halfway through.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   boot:
     runs-on: >-
@@ -37,7 +43,7 @@ jobs:
           'ubuntu-24.04-arm' }}
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install dependencies
         run: |
@@ -54,9 +60,9 @@ jobs:
                       /usr/local/share/boost /opt/hostedtoolcache/CodeQL || true
           df -h /
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.23"
+          go-version: "1.27"
 
       - name: Report acceleration mode
         run: |

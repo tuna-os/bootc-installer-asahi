@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - name: shellcheck
@@ -44,7 +44,7 @@ jobs:
       - name: Validate catalog.json harness evidence
         run: ./scripts/validate-catalog.sh
   selftest:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       # jq is needed by BOTH steps below: selftest.sh's installer_data layout
@@ -108,7 +108,7 @@ jobs:
   # project installs are aarch64. Running this on x86 would test a different
   # image than the one that ships.
   install-selftest:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7

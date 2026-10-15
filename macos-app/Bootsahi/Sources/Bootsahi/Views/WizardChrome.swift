@@ -27,7 +27,8 @@ enum Metrics {
 ///
 /// - `#if compiler(>=6.2)` — `glassEffect` does not merely require macOS 26 at
 ///   *runtime*, it requires the macOS 26 SDK to compile at all. The repo's
-///   long-standing runner is `macos-14` (Xcode 15.4 / Swift 5.10), where an
+///   pre-Tahoe CI job pins a pre-6.2 toolchain (newest Xcode 16.x on `macos-15`;
+///   originally `macos-14` / Swift 5.10), where an
 ///   `#available` check alone would still fail to build. The compiler gate is
 ///   what lets one source tree build on both.
 /// - `#available(macOS 26.0, *)` — the package's deployment target is macOS 13,

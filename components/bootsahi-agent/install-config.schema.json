@@ -11,6 +11,7 @@
     "cosignIdentity",
     "cosignIssuer"
   ],
+  "additionalProperties": false,
   "properties": {
     "targetImgref": {
       "type": "string",
@@ -74,7 +75,8 @@
             "type": "string"
           }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "wifi": {
       "type": "object",

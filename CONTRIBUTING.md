@@ -1,9 +1,10 @@
-# Contributing to bootc-installer-asahi
+# Contributing to Bootsahi
 
-This repo is the Apple Silicon (Asahi Linux) install path for TunaOS-family
-bootc images: a macOS app (Bootsahi) plus a bootstrap image whose first boot
-runs [fisherman](https://github.com/projectbluefin/fisherman) to `bootc
-install` the image the user picked. See [docs/DESIGN.md](docs/DESIGN.md) for
+This repo (`tuna-os/bootc-installer-asahi`) is the Apple Silicon (Asahi Linux)
+install path for TunaOS-family bootc images: a macOS app (Bootsahi) plus a
+bootstrap image whose first boot runs
+[fisherman](https://github.com/projectbluefin/fisherman) to `bootc install`
+the image the user picked. See [docs/DESIGN.md](docs/DESIGN.md) for
 the architecture and [README.md](README.md) for current status.
 
 ## Building and testing

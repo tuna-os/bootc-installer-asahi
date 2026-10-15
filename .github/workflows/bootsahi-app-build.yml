@@ -33,6 +33,10 @@ on:
   pull_request:
     paths: ["macos-app/**"]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: macos-14
@@ -40,7 +44,7 @@ jobs:
       run:
         working-directory: macos-app/Bootsahi
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: swift --version
         run: swift --version
       - name: swift build
@@ -70,7 +74,7 @@ jobs:
       run:
         working-directory: macos-app/Bootsahi
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: capture every screen
         env:
           BOOTSAHI_CAPTURE_DIR: ${{ github.workspace }}/docs/screenshots
@@ -93,7 +97,7 @@ jobs:
       # wrong — which is exactly when someone needs to look at the picture. The
       # first version skipped the upload on failure, so a capture bug could only
       # be diagnosed from ratios with no way to see what they described.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: gui-screenshots
@@ -140,7 +144,7 @@ jobs:
       run:
         working-directory: macos-app/Bootsahi
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: swift --version
         run: swift --version
       # Proves the compiler gate is actually open here — otherwise a silently

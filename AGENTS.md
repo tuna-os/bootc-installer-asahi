@@ -2,7 +2,7 @@
 
 The **Apple Silicon install path** for TunaOS-family bootc images: a macOS
 SwiftUI app (Bootsahi) plus a minimal bootstrap payload whose first boot runs
-[fisherman](https://github.com/projectbluefin/fisherman) to `bootc install`
+[fisherman](https://github.com/tuna-os/fisherman) to `bootc install`
 the image the user picked.
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md) already has the full local test matrix,
@@ -59,8 +59,7 @@ It landed on 2026-07-30, squash-merged — so `d6b21dd` is *not* an ancestor of
 `dev`; it survives only because the PR branch
 `fix/custom-layout-ext4-verity` still exists. Deleting that branch breaks a
 fresh `git clone` + `git checkout <sha>` in both workflows and in the
-bootstrap build. Also note fisherman's canonical home moved to
-`projectbluefin/fisherman`; the URLs here still use the old `tuna-os` path.
+bootstrap build.
 
 Re-pinning is a maintainer decision, not a mechanical bump: it changes what
 gets written to a user's disk on hardware CI cannot fully exercise.

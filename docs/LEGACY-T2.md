@@ -20,8 +20,9 @@ select the dedicated `t2` image profile. All other Intel Macs select the
 
 The recognized T2 set is:
 
+- iMac (2020): `iMac20,1`, `iMac20,2`
 - iMac Pro (2017): `iMacPro1,1`
-- MacBook Air (2018–2020): `MacBookAir8,1`, `MacBookAir8,2`
+- MacBook Air (2018–2020): `MacBookAir8,1`, `MacBookAir8,2`, `MacBookAir9,1`
 - MacBook Pro (2018–2020): `MacBookPro15,1` through `MacBookPro16,4`
 - Mac mini (2018): `Macmini8,1`
 - Mac Pro (2019): `MacPro7,1`

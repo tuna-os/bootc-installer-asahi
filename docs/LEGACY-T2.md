@@ -1,22 +1,23 @@
 # Bootsahi Legacy — Intel Mac macOS-to-Linux design
 
-Bootsahi Legacy is the Intel-Mac companion to Bootsahi's Apple-Silicon path.
-It has a different host boundary: an Intel Mac can be stranded on macOS High
-Sierra, Mojave, Catalina, or a later release, while the Apple-Silicon app
-requires macOS 13. Legacy therefore supports **macOS 10.13 High Sierra and
-newer** and uses only Bash 3.2 and POSIX facilities available on that floor.
+Bootsahi Legacy is the Intel-Mac companion to the Apple-Silicon path of
+Bootsahi. The two paths have different host limits. The Apple-Silicon app
+needs macOS 13. But many Intel Macs stay on macOS High Sierra, Mojave, or
+Catalina. Thus Legacy supports **macOS 10.13 High Sierra and newer**. It
+uses only Bash 3.2 and POSIX tools, because these are available on that
+release.
 
 ## Status
 
-Only the preflight (`legacy/bootsahi-legacy`) is implemented. The firmware
-extraction, USB writer, and legacy installer UI described below are design
-and do not exist yet.
+At this time, the only part that exists is the preflight script
+(`legacy/bootsahi-legacy`). The firmware extraction, the USB writer, and the
+legacy installer UI are design only.
 
 ## Scope
 
-All Intel Macs on macOS 10.13 or newer are accepted. Recognized T2 Macs
-select the dedicated `t2` image profile. All other Intel Macs select the
-`generic-intel` profile, which uses the normal x86_64 TunaOS images.
+Legacy accepts all Intel Macs on macOS 10.13 or newer. A recognized T2 Mac
+gets the dedicated `t2` image profile. All other Intel Macs get the
+`generic-intel` profile, which uses the usual TunaOS images for x86_64.
 
 The recognized T2 set is:
 
@@ -27,8 +28,8 @@ The recognized T2 set is:
 - Mac mini (2018): `Macmini8,1`
 - Mac Pro (2019): `MacPro7,1`
 
-The installer must never apply the T2 kernel profile to a Mac outside this
-set.
+The installer must not apply the T2 kernel profile to a Mac that is not in
+this set.
 
 ## Migration flow
 
@@ -41,50 +42,54 @@ macOS 10.13+ preflight
   -> bootc install the selected image and verify the post-install hardware contract
 ```
 
-This is USB based rather than an Asahi-style APFS-resize backend. The T2 boot
-policy requires the user to change Startup Security Utility settings, and the
-legacy frontend must never change partitions or security policy merely by
-running a preflight.
+This flow uses a USB drive, not an APFS resize as on Asahi. To boot from USB,
+a T2 Mac needs a change in Startup Security Utility. The user must make this
+change. The preflight must not change partitions or security policy.
 
 ## Image contract
 
-Generic Intel images keep their normal hardware gate. Every offered `*-t2`
-bootc image must also pass the T2 hardware gate before it appears in the
-legacy catalog. The T2 gate verifies:
+Generic Intel images keep their usual hardware gate. Each `*-t2` bootc image
+must also pass the T2 hardware gate before it shows in the legacy catalog. The
+T2 gate does these checks:
 
-1. x86_64 UEFI boot and the T2 kernel/driver stack (keyboard, trackpad,
-   internal SSD, audio, camera, Touch Bar where present, and fan control);
-2. `brcmfmac` is used for internal wireless — **never** `broadcom-wl`;
-3. a locally extracted firmware payload is installed at the standard
-   `/usr/lib/firmware/brcm` location before NetworkManager is started;
-4. iwd is selected as the NetworkManager Wi-Fi backend where required; and
-5. the chosen image can complete an unattended `bootc install` to a T2
-   target disk.
+1. x86_64 UEFI boot and the T2 kernel and drivers (keyboard, trackpad, SSD,
+   audio, camera, fans, Touch Bar);
+2. internal wireless uses `brcmfmac` — **never** `broadcom-wl`;
+3. the image installs the local firmware files at `/usr/lib/firmware/brcm`
+   before NetworkManager starts;
+4. NetworkManager uses iwd as its Wi-Fi backend where necessary; and
+5. the image can do an unattended `bootc install` to a T2 target disk.
 
-The kernel and supporting packages are versioned in the image recipe, not
-downloaded ad hoc by the installed system. This gives users an atomic,
-bootc-managed hardware stack while allowing the project to update package
-sources without changing the macOS application.
+The image recipe sets the versions of the kernel and its packages. The
+installed system does not download them. Thus users get an atomic
+hardware stack that bootc manages. The project can change package sources and
+keep the same macOS application.
 
 ## Firmware is an on-device hand-off
 
-Apple's Broadcom firmware may not be redistributed. Therefore it is not part
-of a public TunaOS image, release asset, or registry layer. On macOS the
-legacy flow extracts the firmware from that Mac and places a local,
-per-install hand-off on the installer media/EFI partition. The T2 bootstrap
-consumes it once, installs it into the target deployment, then removes the
-hand-off. The user may choose Ethernet or USB tethering instead; in that case
-the bootstrap can use the documented recovery-image extraction path.
+The Apple license does not let us give the Broadcom firmware to other
+persons. Thus the firmware is not part of a public TunaOS image, release
+asset, or registry layer. On macOS, the legacy flow extracts the firmware from
+that Mac. It puts a local hand-off for one installation on the installer
+media or EFI partition. The T2 bootstrap reads the hand-off one time,
+installs it into the target deployment, and then deletes it.
 
-Some iMac/iMac Pro configurations require an existing macOS installation for
-firmware extraction, so the legacy UI must strongly recommend preserving the
-macOS/recovery partition until the T2 image has completed its hardware check.
+As an alternative, the user can connect to a network with Ethernet or a
+phone. Then the bootstrap can extract the firmware from the recovery image.
+
+Some iMac and iMac Pro models can get the firmware only from an installed
+macOS. Thus the legacy UI must tell the user to keep the macOS and recovery
+partitions. The user can remove them after the T2 image passes its hardware
+check.
 
 ## Included preflight
 
-`legacy/bootsahi-legacy` is the non-destructive preflight entry point. It
-runs on the macOS 10.13 Bash 3.2. `--json` is the stable UI interface: it
-reports `supported` for Intel Macs on macOS 10.13 or newer, otherwise
-`unsupported` with a reason, and a `profile` of `generic-intel` or `t2`.
-Without `--json` it prints a human-readable result and exits 1 when the Mac
-is unsupported.
+`legacy/bootsahi-legacy` is the preflight script. It does not change the
+disk. It runs on the Bash 3.2 of macOS 10.13. The `--json` output is the
+stable interface for the UI.
+
+In the JSON output, `status` is `supported` for Intel Macs on
+macOS 10.13 or newer. For other Macs, its `status` is `unsupported` and
+`reason` tells why. The `profile` is `generic-intel` or `t2`. Without
+`--json`, the script prints a result for persons to read. It exits with code 1
+if the Mac is not supported.

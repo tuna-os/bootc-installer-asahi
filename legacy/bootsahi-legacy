@@ -2,7 +2,8 @@
 # bootsahi-legacy — non-destructive compatibility preflight for Intel/T2 Macs.
 #
 # This intentionally does not repartition disks or alter Startup Security.
-# The installer UI invokes it before offering the legacy USB migration flow.
+# The legacy installer UI is meant to run it before offering the USB migration
+# flow; `--json` is the stable machine-readable interface for that caller.
 set -euo pipefail
 
 min_macos="10.13"
@@ -10,9 +11,9 @@ model="$(/usr/sbin/sysctl -n hw.model)"
 macos="$(/usr/bin/sw_vers -productVersion)"
 
 version_at_least() {
-  local actual="$1" required="$2"
-  local IFS=.
-  local -a a=($actual) b=($required)
+  local -a a b
+  IFS=. read -r -a a <<<"$1"
+  IFS=. read -r -a b <<<"$2"
   local i
   for i in 0 1 2; do
     local av="${a[i]:-0}" bv="${b[i]:-0}"
@@ -36,6 +37,7 @@ reason=""
 if ! version_at_least "$macos" "$min_macos"; then
   status="unsupported"
   reason="Bootsahi Legacy requires macOS 10.13 High Sierra or newer."
+fi
 
 if [[ "${1:-}" == "--json" ]]; then
   printf '{"status":"%s","profile":"%s","model":"%s","macos":"%s","minimum_macos":"%s","reason":"%s"}\n' \
@@ -44,8 +46,12 @@ else
   printf 'Bootsahi Legacy preflight\n'
   printf '  Model: %s\n  macOS: %s\n' "$model" "$macos"
   if [[ "$status" == "supported" ]]; then
-    printf '  Result: supported Intel Mac (%s profile)\n'
-    printf '\nNext: prepare the T2 firmware hand-off and boot the signed TunaOS T2 installer USB.\n'
+    printf '  Result: supported Intel Mac (%s profile)\n' "$profile"
+    if [[ "$profile" == "t2" ]]; then
+      printf '\nNext: prepare the local Broadcom firmware hand-off and boot the TunaOS T2 installer USB.\n'
+    else
+      printf '\nNext: boot a standard x86_64 TunaOS installer USB.\n'
+    fi
   else
     printf '  Result: unsupported — %s\n' "$reason" >&2
     exit 1

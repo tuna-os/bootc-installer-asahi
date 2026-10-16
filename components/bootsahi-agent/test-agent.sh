@@ -10,6 +10,7 @@ set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 AGENT="$HERE/bootsahi-agent.sh"
+source "$HERE/bootsahi-agent-recipe.sh"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -206,6 +207,7 @@ fi
 
 echo "==> recipe.json shape (fisherman dumps the recipe into install.log)"
 r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-dump")
+r_dump="$r"
 # shape_fail is separate from the global `fail` on purpose: this block used to
 # gate its "ok" on `fail`, so any EARLIER failing test silenced it entirely and
 # the shape checks reported neither ok nor FAIL — leaving you unable to tell
@@ -230,6 +232,7 @@ grep -q '"targetImgref": "ghcr.io/tuna-os/bonito:gnome-asahi"' "$r/install.log" 
 	{ echo "FAIL: targetImgref should remain the tag so upgrades still track it"; shape_fail=1; }
 grep -q '"target": "/"' "$r/install.log" || { echo "FAIL: recipe missing root customMount"; shape_fail=1; }
 grep -q '"target": "/boot/efi"' "$r/install.log" || { echo "FAIL: recipe missing ESP customMount"; shape_fail=1; }
+grep -q '"hostname": "tuna-mac"' "$r/install.log" || { echo "FAIL: recipe missing expected hostname"; shape_fail=1; }
 grep -q '"imageType": "bootc"' "$r/install.log" || { echo "FAIL: recipe missing imageType=bootc"; shape_fail=1; }
 if [ "$shape_fail" -eq 0 ]; then
 	echo "ok: recipe.json shape"
@@ -246,29 +249,28 @@ fi
 # install is not a configuration this project supports and fails to test — it is
 # one bootc rejects outright ("bootupd is required for ostree-based installs").
 #
-# So the testable property is not "does the ostree path work" but "can anything
-# in the config reach the pairing at all". That is what regresses: the plausible
-# future change is someone plumbing a backend option through the schema for
-# flexibility, at which point the constant silently becomes user-settable and
-# the failure returns — late, after the partition is formatted. Config keys that
-# do not exist today are exactly the ones a careless jq merge would start
-# honouring, so ask for them by the names they would most likely be given.
+# So the testable property is twofold:
+# 1) Unexpected backend keys in install-config are rejected at the schema gate (issue #121).
+# 2) Even if passed to the recipe adapter, build_recipe hardcodes the literals.
 echo "==> config cannot override the composefs/systemd pairing"
 jq '. + {"bootloader":"grub2","composeFsBackend":false,
          "backend":"ostree","imageType":"ostree"}' \
 	"$WORK/good.json" >"$WORK/override-backend.json"
-r=$(run_agent "$WORK/override-backend.json" "$STUBS/fisherman-dump")
+r_override=$(run_agent "$WORK/override-backend.json" "$STUBS/fisherman-dump")
+check_exit "exit code (unexpected config keys refused at schema gate)" 1 "$r_override"
+
+RECIPE_FILE="$WORK/override-recipe.json"
+build_recipe "$WORK/override-backend.json" "/dev/null" "/dev/zero" "dummy@sha256:123"
 override_fail=0
-grep -q '"bootloader": "systemd"' "$r/install.log" ||
+grep -q '"bootloader": "systemd"' "$RECIPE_FILE" ||
 	{ echo "FAIL: a config key overrode bootloader — grub2 has no persistent EFI vars under U-Boot"; override_fail=1; }
-grep -q '"composeFsBackend": true' "$r/install.log" ||
+grep -q '"composeFsBackend": true' "$RECIPE_FILE" ||
 	{ echo "FAIL: a config key overrode composeFsBackend — bootc will demand bootupd and fail after formatting"; override_fail=1; }
-grep -q '"imageType": "bootc"' "$r/install.log" ||
+grep -q '"imageType": "bootc"' "$RECIPE_FILE" ||
 	{ echo "FAIL: a config key overrode imageType"; override_fail=1; }
 if [ "$override_fail" -eq 0 ]; then
 	echo "ok: config cannot override the composefs/systemd pairing"
 else
-	dump_agent_output "$r" "backend override"
 	fail=1
 fi
 
@@ -281,7 +283,7 @@ fi
 #
 # Accepted set is disk.formatPartition()'s switch plus the two skip-format
 # sentinels. Keep in sync with internal/disk/custom.go.
-CAPTURED="$r/recipe-captured.json"
+CAPTURED="$r_dump/recipe-captured.json"
 if [ ! -f "$CAPTURED" ]; then
 	echo "FAIL: fisherman-dump did not capture a recipe to inspect"
 	fail=1
@@ -321,6 +323,27 @@ check_exit "exit code (no config -> fall through to interactive UI)" 2 "$r"
 echo "==> install-config.json missing a required field"
 r=$(run_agent "$WORK/missing-field.json" "$STUBS/fisherman-ok")
 check_exit "exit code (missing field)" 1 "$r"
+
+echo "==> install-config.json with unexpected root field (schema additionalProperties)"
+jq '.unexpectedRootField = "disallowed"' "$WORK/good.json" >"$WORK/unexpected-field.json"
+r=$(run_agent "$WORK/unexpected-field.json" "$STUBS/fisherman-ok")
+check_exit "exit code (unexpected root field rejected)" 1 "$r"
+
+echo "==> install-config.json with unexpected user field (schema additionalProperties)"
+jq '.user.extra = "disallowed"' "$WORK/good.json" >"$WORK/unexpected-user.json"
+r=$(run_agent "$WORK/unexpected-user.json" "$STUBS/fisherman-ok")
+check_exit "exit code (unexpected user field rejected)" 1 "$r"
+
+echo "==> install-config.json with invalid filesystem enum"
+jq '.filesystem = "ntfs"' "$WORK/good.json" >"$WORK/invalid-fs.json"
+r=$(run_agent "$WORK/invalid-fs.json" "$STUBS/fisherman-ok")
+check_exit "exit code (invalid filesystem rejected)" 1 "$r"
+
+echo "==> install-config.json with invalid encryption type enum"
+jq '.encryption.type = "unsupported-cipher"' "$WORK/good.json" >"$WORK/invalid-enc.json"
+r=$(run_agent "$WORK/invalid-enc.json" "$STUBS/fisherman-ok")
+check_exit "exit code (invalid encryption type rejected)" 1 "$r"
+
 
 echo "==> fisherman itself fails"
 r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-fail")
@@ -537,6 +560,75 @@ r=$(run_agent "$WORK/good.json" "$STUBS/fisherman-ok" BOOTSAHI_ALLOW_CONFIG_DEVI
 check_exit "exit code (no stub_info, no override -> refuse)" 1 "$r"
 check "no recipe generated without a resolvable target" "" \
 	"$(ls "$r/recipe-captured.json" 2>/dev/null || true)"
+
+# ── D1 recipe validated by the REAL fisherman (issue #26) ─────────────────
+# Every assertion above is OUR opinion of what fisherman accepts. That is
+# exactly how the vfat defect survived: the recipe looked right to us and was
+# never shown to the real consumer. This step hands the generated recipe to
+# fisherman's own `validate` so a future schema change or unsupported fstype
+# does not survive to the install phase.
+#
+# This is the bridge between the stub-based tests (which check the agent's
+# config→recipe logic on every machine, no fisherman required) and the
+# real-install test (test-agent-install.sh, which runs a full install but
+# needs a loop device and a target image). validate is non-destructive — it
+# parses and checks, it does not mutate — so it is cheap enough to run here.
+echo
+echo "==> the REAL fisherman validates the generated recipe (issue #26)"
+FISHERMAN_BIN="${FISHERMAN_BIN:-$(command -v fisherman 2>/dev/null || true)}"
+if [ -z "$FISHERMAN_BIN" ] || [ ! -x "$FISHERMAN_BIN" ]; then
+	echo "  SKIP no fisherman binary available."
+	echo "       This is the assertion that would have caught the vfat bug (#17), so"
+	echo "       its absence is worth noticing. Set FISHERMAN_BIN=/path/to/fisherman"
+	echo "       to enable. In CI (selftest.yml), the pinned fisherman is built and"
+	echo "       this check runs green against the EXACT revision the bootstrap ships."
+elif [ ! -f "$CAPTURED" ]; then
+	echo "FAIL: no recipe was captured by the dump stub — cannot validate"
+	fail=1
+else
+	if out=$("$FISHERMAN_BIN" validate "$CAPTURED" 2>&1); then
+		echo "ok: fisherman validate accepted the generated recipe"
+		echo "    ($("$FISHERMAN_BIN" version 2>/dev/null | head -1))"
+	else
+		echo "FAIL: fisherman REJECTED the recipe this agent generates"
+		echo "$out" | sed 's/^/      | /'
+		fail=1
+	fi
+
+	# Belt-and-braces: prove the validator is actually discriminating.
+	# Feed it the exact defect that shipped — fstype=vfat on the ESP — and
+	# confirm it is rejected (or note that it would be caught later).
+	sed 's/"fstype": "unformatted"/"fstype": "vfat"/' "$CAPTURED" \
+		>"$WORK/recipe-vfat.json"
+	if "$FISHERMAN_BIN" validate "$WORK/recipe-vfat.json" >/dev/null 2>&1; then
+		echo "  note: this fisherman ACCEPTS fstype=vfat at validate time — it will"
+		echo "        fail later in formatPartition instead. Fixed by"
+		echo "        projectbluefin/fisherman#12; our own fstype assertions above"
+		echo "        are the gate until that lands."
+	else
+		echo "ok: fisherman rejects the vfat defect at validate time"
+	fi
+
+	# Also try an unsupported customMount fstype. The agent's fstype-accepted
+	# set above asserts this, but fisherman's own validator is the authority.
+	sed 's/"fstype": "btrfs"/"fstype": "zfs"/' "$CAPTURED" \
+		>"$WORK/recipe-zfs.json"
+	if "$FISHERMAN_BIN" validate "$WORK/recipe-zfs.json" >/dev/null 2>&1; then
+		echo "  note: fisherman ACCEPTS fstype=zfs — it would fail in"
+		echo "        formatPartition. Our own fstype check catches this."
+	else
+		echo "ok: fisherman rejects unsupported fstype=zfs at validate time"
+	fi
+fi
+
+echo
+echo "==> device resolution & partition safety unit tests"
+if "$HERE/test-agent-device.sh"; then
+	echo "ok: device library unit tests passed"
+else
+	echo "FAIL: device library unit tests failed"
+	fail=1
+fi
 
 if [ "$fail" -ne 0 ]; then
 	echo "SELFTEST FAILED"

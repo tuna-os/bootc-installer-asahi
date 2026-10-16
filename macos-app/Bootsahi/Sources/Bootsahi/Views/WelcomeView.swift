@@ -2,6 +2,12 @@ import SwiftUI
 
 struct WelcomeView: View {
     @EnvironmentObject var flow: InstallFlowViewModel
+    private let hardware = HardwareGate.current()
+
+    private var hardwareUnsupported: Bool {
+        if case .unsupported = hardware { return true }
+        return false
+    }
 
     /// What the user is agreeing to, said plainly and up front.
     ///
@@ -58,13 +64,18 @@ struct WelcomeView: View {
                     .accessibilityElement(children: .combine)
                 }
 
-                // TODO (D4 territory): SoC-generation gate. DESIGN.md's
-                // constraints section requires refusing politely, before any
-                // work starts, on M3+ Macs (not yet supported by Asahi) — via
-                // sysctl hw.model / IORegistry, not left to the backend to
-                // discover partway through. When that lands it belongs here,
-                // as an inline warning that disables Continue, so the refusal
-                // arrives before the user has invested any time.
+                if case .unsupported(let model, let reason) = hardware {
+                    Label {
+                        Text("Model \(model): \(reason)")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityElement(children: .combine)
+                }
             }
             .frame(maxWidth: 520, alignment: .leading)
         } actions: {
@@ -75,6 +86,7 @@ struct WelcomeView: View {
                 flow.advanceToCatalog()
             }
             .primaryAction()
+            .disabled(hardwareUnsupported)
         }
     }
 }

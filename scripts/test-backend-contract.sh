@@ -19,7 +19,15 @@
 #   1. the backend's own --json protocol suite still passes at that revision
 #      (24 tests, no macOS needed — they mock stdin/stdout);
 #   2. the producer still emits every key the agent consumes, checked against
-#      the backend's real source rather than against our fixtures.
+#      the backend's real source rather than against our fixtures;
+#   3. the terminal result contract from issue #25: a failing run emits a
+#      structured {"event":"result","status":"failure",...} line on stdout
+#      AND exits non-zero. The backend's own suite tests util.emit_result()
+#      in isolation (capsys mocks); none of it runs main.py and observes the
+#      exit status, which is exactly the gap that let the pre-fix backend
+#      catch every exception, print warnings, and fall through to exit 0.
+#      This runs the real main.py --json with a failure injected and checks
+#      the process-level behaviour, so a pin regression can't go green.
 #
 # Usage: ./scripts/test-backend-contract.sh
 set -euo pipefail
@@ -48,6 +56,54 @@ fail=0
 echo "==> Fetching the pinned backend ($BACKEND_REV)"
 git clone --quiet "$BACKEND_REPO" "$WORK/backend"
 git -C "$WORK/backend" checkout --quiet "$BACKEND_REV"
+checked_out=$(git -C "$WORK/backend" rev-parse HEAD)
+if [ "$checked_out" != "$BACKEND_REV" ]; then
+	echo "FAIL: backend checkout resolved to $checked_out, expected pinned $BACKEND_REV"
+	echo "      Refusing to run protocol checks against an unverified revision."
+	exit 1
+fi
+echo "ok: backend checkout is exactly $checked_out"
+
+# The executable and its protocol document are one release unit. A checkout
+# that retains tests but loses a documented event or answer rule is not safe
+# for the Swift driver to consume. Check both at the exact pinned revision.
+echo
+echo "==> --json protocol surface at the pinned revision"
+protocol_fail=0
+for required in 'JSON_MODE' 'ask_json' 'emit_result' '"--json"'; do
+	if grep -q "$required" "$WORK/backend/src/main.py" "$WORK/backend/src/util.py" 2>/dev/null; then
+		echo "ok: backend source contains $required"
+	else
+		echo "FAIL: backend source no longer contains $required"
+		protocol_fail=1
+	fi
+done
+for required in 'event": "message' 'event": "ask' 'event": "result' 'exactly one' 'answering the most recent'; do
+	if grep -q "$required" "$WORK/backend/docs/json-mode.md" 2>/dev/null; then
+		echo "ok: protocol document specifies $required"
+	else
+		echo "FAIL: protocol document no longer specifies $required"
+		protocol_fail=1
+	fi
+done
+if [ "$protocol_fail" -ne 0 ]; then
+	fail=1
+	echo "FAIL: pinned backend source and protocol documentation drifted"
+fi
+
+# Keep the consumer-side contract in this repository too. The backend's
+# protocol document is the implementation reference; this copy is what the
+# Swift driver and reviewers use when checking a change to the handoff.
+echo
+echo "==> repository-owned D2 consumer contract"
+for required in 'exactly one JSON answer' 'Only one ask is outstanding' 'event":"result' 'subprocess exits zero' 'EFI PARTUUID'; do
+	if grep -q "$required" docs/D2-JSON-MACHINE-MODE.md; then
+		echo "ok: consumer contract specifies $required"
+	else
+		echo "FAIL: consumer contract omits $required"
+		fail=1
+	fi
+done
 
 # ── 1. The backend's own protocol suite, at the revision we target ───────────
 echo
@@ -124,6 +180,115 @@ if grep -q "macos_device" components/bootsahi-agent/bootsahi-agent.sh 2>/dev/nul
 	fail=1
 else
 	echo "ok: the agent never reads macos_device"
+fi
+
+# ── 3. The terminal result contract (issue #25) ───────────────────────────
+# The pre-fix backend caught every exception (CalledProcessError, generic
+# Exception), printed advice, and fell through to exit 0 with NO terminal
+# event — so a driver treating exit 0 as its sole success observable told the
+# user to bless and reboot an incomplete install. The fix (in the backend, at
+# the pinned revision) emits one structured result event per run and exits
+# non-zero on every failure. What is missing on THIS side is any CI-held
+# check that the pinned backend actually does that: its own pytest suite only
+# mocks util.emit_result() output and never observes the process exit status.
+#
+# So hold the PINNED backend to the process-level contract here. The injected
+# failure needs no macOS, no disk and no network: a corrupt installer_data.json
+# makes InstallerMain()'s constructor raise JSONDecodeError before any real
+# probing happens, which is the generic-exception path the issue calls out.
+# A pre-fix backend exits 0 with nothing on stdout; a fixed one exits 1 with
+# {"event":"result","status":"failure","kind":"exception",...}.
+echo
+echo "==> terminal result contract (issue #25): injected failure => result event + non-zero exit"
+
+TERM_DIR="$WORK/terminal"
+mkdir -p "$TERM_DIR"
+# Copy the source tree; src/asahi_firmware is a symlink to the clone root's
+# firmware tree, so resolve it the same way mac-hardware-smoketest.sh does.
+cp "$WORK/backend/src/"*.py "$TERM_DIR/"
+ln -sf "$WORK/backend/asahi_firmware" "$TERM_DIR/asahi_firmware"
+# Deliberately invalid JSON: InstallerMain.__init__ does json.load() first, so
+# this raises JSONDecodeError without touching diskutil/system probing at all.
+printf '{"os_list": [\n' >"$TERM_DIR/installer_data.json"
+printf 'contract-test\n' >"$TERM_DIR/version.tag"
+
+TERM_CODE=0
+(cd "$TERM_DIR" && python3 main.py --json >"$WORK/terminal.out" 2>"$WORK/terminal.err") || TERM_CODE=$?
+
+TERM_VERDICT=$(python3 - "$WORK/terminal.out" <<'PY'
+import json, sys
+
+events = []
+parse_errors = []
+with open(sys.argv[1], encoding="utf-8", errors="replace") as fh:
+    for line in fh:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            parse_errors.append(line)
+            continue
+        events.append(event)
+
+results = [event for event in events if event.get("event") == "result"]
+if parse_errors:
+    print("NON_JSON_OUTPUT")
+elif not results:
+    print("NO_RESULT_EVENT")
+elif len(results) != 1:
+    print("DUPLICATE_RESULT_EVENTS")
+elif events[-1] is not results[0]:
+    print("RESULT_NOT_LAST")
+elif results[0].get("status") == "success":
+    print("UNEXPECTED_SUCCESS")
+elif results[0].get("status") == "failure":
+    print("FAILURE_RESULT_OK")
+else:
+    print("UNEXPECTED_STATUS")
+PY
+)
+
+case "$TERM_VERDICT:$TERM_CODE" in
+	FAILURE_RESULT_OK:0)
+		echo "FAIL: injected failure emitted a failure result but exited 0 — the issue #25"
+		echo "      regression, where exit 0 alone reads as success to a driver."
+		fail=1
+		;;
+	FAILURE_RESULT_OK:*)
+		echo "ok: injected failure exited $TERM_CODE and emitted a structured failure result"
+		;;
+	NO_RESULT_EVENT:*)
+		echo "FAIL: injected failure exited $TERM_CODE with NO result event — the exact"
+		echo "      pre-fix behaviour from issue #25 (warnings, then silent exit 0)."
+		fail=1
+		;;
+	UNEXPECTED_SUCCESS:*)
+		echo "FAIL: injected failure reported status=success"
+		fail=1
+		;;
+	DUPLICATE_RESULT_EVENTS:*)
+		echo "FAIL: injected failure emitted more than one terminal result event"
+		fail=1
+		;;
+	RESULT_NOT_LAST:*)
+		echo "FAIL: terminal result was not the final JSON event"
+		fail=1
+		;;
+	NON_JSON_OUTPUT:*)
+		echo "FAIL: backend emitted non-JSON stdout in machine mode"
+		fail=1
+		;;
+	*)
+		echo "FAIL: terminal-result check saw verdict '$TERM_VERDICT' with exit $TERM_CODE"
+		fail=1
+		;;
+esac
+
+if [ "$TERM_VERDICT" != "FAILURE_RESULT_OK" ] || [ "$TERM_CODE" -eq 0 ]; then
+	echo "      backend stderr (tail — the traceback from the injected JSON error):"
+	tail -6 "$WORK/terminal.err" 2>/dev/null | sed 's/^/      | /'
 fi
 
 echo

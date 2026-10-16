@@ -1,4 +1,4 @@
-# TunaOS Asahi Installer — design
+# Bootsahi — design
 
 *Draft 1, 2026-07-23. The "ultimate challenge": a good macOS-based installer for
 bootc Asahi images (all TunaOS variants + Dakota + Bluefin).*
@@ -25,9 +25,14 @@ bootstrap boots ──▶ first-boot agent reads install-config.json
 ```
 
 Why this wins:
-- **Catalog = the registries.** The macOS app lists variants from a small
-  `catalog.json` (generated in CI from registry-map.yaml); new variants/tags
-  appear without touching the installer or payloads.
+- **Catalog = an allowlist of harness-verified refs.** The macOS app lists
+  variants from a small `catalog.json` (generated in CI from
+  registry-map.yaml, filtered through harness results per
+  tuna-os/tunaOS#910). Every entry carries a `verified` field; the app only
+  offers entries where it is `true`. New variants/tags appear only after
+  passing the Asahi golden-manifest harness — no unverified image is ever
+  offered, because a user picking one would complete the whole recoveryOS
+  blessing flow and end up with a Mac that does not boot (#41).
 - **The heavy download happens in Linux**, with bootc's resumable, layered,
   signed pulls — not as a giant zip over asahi-installer's plain HTTP.
 - **One artifact to maintain, test, and sign.** The bootstrap is small enough
@@ -105,14 +110,15 @@ Why this wins:
    `customMounts` and runs `bootc install to-filesystem` — `to-disk` remains
    debug/QEMU-only (D0's own payload harness).
 3. **D2** — *(implemented, unverified on real hardware)* `--json` machine
-   mode for asahi-installer: [hanthor/asahi-installer@json-machine-mode](
-   https://github.com/hanthor/asahi-installer/tree/json-machine-mode)
-   ([protocol doc](https://github.com/hanthor/asahi-installer/blob/json-machine-mode/docs/json-mode.md)).
+   mode for asahi-installer: [tuna-os/bootc-installer-asahi@json-machine-mode](
+   https://github.com/tuna-os/bootc-installer-asahi/tree/json-machine-mode)
+   ([protocol doc](https://github.com/tuna-os/bootc-installer-asahi/blob/json-machine-mode/docs/json-mode.md)).
    Structured stdio events/answers routed through the two chokepoints every
    TTY prompt already funnels through, so the ~80 existing call sites needed
    no changes and the default TTY path is provably byte-for-byte unchanged.
-   18 protocol-layer tests pass in CI; the full interactive flow
-   (diskutil/bless/bputil) still needs a real Mac to verify. **Not** opened
+   CI now checks the pinned source chokepoints and protocol document, runs the
+   backend suite, and verifies the process-level terminal result. The full
+   interactive flow (diskutil/bless/bputil) still needs a real Mac. **Not** opened
    as an upstream PR — awaiting James's go-ahead per the standing "no
    upstream outreach" rule.
 4. **D3** — *(skeleton scaffolded; `swift build`/`swift test` CI-green on a
@@ -137,3 +143,26 @@ Why this wins:
 - Does the bootstrap adopt fisherman as the first-boot agent directly, or a
   thin dedicated agent that calls bootc? (fisherman reuse keeps one installer
   brain across ISO and Asahi paths — my recommendation.)
+
+## Adopted RFC #6 Host-Driven Install Patterns
+
+See [issue #6](https://github.com/tuna-os/bootc-installer-asahi/issues/6) and [`UNIFIED-INSTALL-CONTRACT.md`](UNIFIED-INSTALL-CONTRACT.md) for full technical rationale.
+
+1. **Unified Install Contract (`install-config.json`):**
+   - Single JSON contract shared between macOS host app and first-boot agent.
+   - Hashed account passwords ($6$ crypt format) supported via `chpasswd -e`.
+   - Wi-Fi credentials and LUKS passphrases are never stored in plaintext on the ESP.
+   - Partition device paths are resolved at runtime via PARTUUID/role (per ADR 0001) rather than hardcoded by the host app.
+
+2. **Drive-Mode E2E Testing (`TUNADIVE_E2E_DRIVE=1`):**
+   - Framework-agnostic UI automation seam for the SwiftUI app without accessibility bus dependencies.
+   - Directive polling (`/tmp/tuna-dive-e2e-drive.json`) and state snapshot reporting (`/tmp/tuna-dive-e2e-drive-state.json`).
+
+3. **macOS User Data Bridge (Architecture Direction):**
+   - Reverses wootc's Linux-driven bind mount pattern due to Apple Silicon hardware encryption and lack of APFS driver in Linux.
+   - Extraction occurs natively on the macOS host app before rebooting.
+   - Reuses wootc's catalog, consent-tiering (`migration-selection.json`), and non-secret identity extraction (`wootc-identity`).
+
+4. **Evidence & Quality Discipline:**
+   - Green-only evidence requirement for published walkthroughs and screenshots.
+   - CI-enforced regression tests across payload, agent, and backend contracts.

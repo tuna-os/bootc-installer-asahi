@@ -45,7 +45,33 @@ enum PasswordHash {
         (62, 20, 41),
     ]
 
-    static let defaultRounds = 5000
+    /// The rounds count the `$6$` format IMPLIES when no `rounds=` field is
+    /// present in the hash string.
+    ///
+    /// This is not a policy knob and must never be changed: it is what
+    /// `shadow` assumes when it parses a bare `$6$salt$hash`. A digest
+    /// computed with any other count MUST carry an explicit `rounds=` field,
+    /// or `shadow` recomputes at 5000, gets a different digest, and no
+    /// password unlocks the account.
+    private static let specImplicitRounds = 5000
+
+    /// This project's work factor.
+    ///
+    /// `install-config.json` is written to the ESP — unencrypted FAT,
+    /// world-readable, and deliberately retained after a failed install — so
+    /// this hash is expected to fall into an attacker's hands as a matter of
+    /// course. The whole argument that a `$6$` hash is "not a reusable
+    /// credential the way the typed password is" (bootsahi-agent.sh) rests on
+    /// it being expensive to crack, and 5000 — the spec's implicit minimum,
+    /// which this used to be — is not. SHA-512-crypt at 5000 iterations is
+    /// hashcat mode 1800's baseline; a wordlist-and-rules run covering most
+    /// human-chosen passwords finishes in hours on one consumer GPU.
+    ///
+    /// 656,000 is passlib's `sha512_crypt` default. See the tracking issue
+    /// for the measurement caveat: the round loop below is allocation-bound,
+    /// so confirm the wall-clock cost on the oldest supported Mac before
+    /// treating this number as final.
+    static let defaultRounds = 656_000
 
     /// Produces a `$6$<salt>$<hash>` string.
     ///
@@ -93,9 +119,18 @@ enum PasswordHash {
         let s = stretch(digest(dsInput), to: saltBytes.count)
 
         // The deliberately slow part.
+        //
+        // The buffer is hoisted out of the loop and reused. At 5000 rounds a
+        // fresh array per iteration was free; at the current work factor the
+        // allocation is the dominant cost, and `removeAll(keepingCapacity:)`
+        // keeps the storage while `reserveCapacity` sizes it once for the
+        // largest input any iteration builds (two 64-byte-or-longer halves,
+        // plus S, plus P).
         var c = a
+        var input = [UInt8]()
+        input.reserveCapacity(2 * max(p.count, 64) + s.count + p.count)
         for i in 0..<rounds {
-            var input: [UInt8] = []
+            input.removeAll(keepingCapacity: true)
             input += (i & 1) == 1 ? p : c
             if i % 3 != 0 { input += s }
             if i % 7 != 0 { input += p }
@@ -103,7 +138,11 @@ enum PasswordHash {
             c = digest(input)
         }
 
-        let prefix = rounds == defaultRounds ? "$6$" : "$6$rounds=\(rounds)$"
+        // Compared against the SPEC's implicit default, not this project's.
+        // Comparing against `defaultRounds` meant that raising the work factor
+        // silently emitted a bare "$6$" prefix for a digest computed with the
+        // new count — a syntactically valid hash that no password unlocks.
+        let prefix = rounds == specImplicitRounds ? "$6$" : "$6$rounds=\(rounds)$"
         return prefix + String(decoding: saltBytes, as: UTF8.self) + "$" + encode(c)
     }
 

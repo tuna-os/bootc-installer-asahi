@@ -4,15 +4,21 @@ struct CatalogView: View {
     @EnvironmentObject var flow: InstallFlowViewModel
 
     var body: some View {
-        WizardPage(
+        /// Only offer entries that have passed the Asahi golden-manifest
+        /// harness (tuna-os/tunaOS#910). An unverified image may leave a Mac
+        /// unbootable after the recoveryOS blessing step — the single worst
+        /// outcome this project can produce (#41).
+        let verified = (flow.catalog?.entries ?? []).filter { $0.verified }
+
+        return WizardPage(
             symbol: "shippingbox",
             title: "Choose what to install",
-            subtitle: "Every option is a bootc image. You can rebase to another one "
-                    + "later without reinstalling."
+            subtitle: "Every option has been verified bootable on Apple Silicon. "
+                    + "You can rebase to another one later without reinstalling."
         ) {
             Group {
-                if let catalog = flow.catalog, !catalog.entries.isEmpty {
-                    list(catalog.entries)
+                if !verified.isEmpty {
+                    list(verified)
                 } else {
                     emptyState
                 }
@@ -75,10 +81,10 @@ struct CatalogView: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        // TODO: catalog.json generation in CI doesn't exist yet (D3 milestone
-        // item). Bundling a static placeholder until that job lands.
-        let message = "Catalog generation in CI is still to be built, so there is "
-                    + "nothing to choose from yet."
+        let message = "No harness-verified images are available right now. "
+                    + "Every image offered here must pass the Asahi golden-manifest "
+                    + "harness (tuna-os/tunaOS#910) before it appears — an "
+                    + "unverified image can leave a Mac unbootable (#41)."
         if #available(macOS 14.0, *) {
             ContentUnavailableView {
                 Label("No images available", systemImage: "shippingbox")

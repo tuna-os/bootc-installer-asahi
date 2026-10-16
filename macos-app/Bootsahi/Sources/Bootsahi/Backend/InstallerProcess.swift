@@ -14,6 +14,9 @@ final class InstallerProcess {
     private let stdinPipe = Pipe()
     private let stdoutPipe = Pipe()
     private var buffer = Data()
+    private var terminationStatus: Int32?
+    private var stdoutEOF = false
+    private var didNotifyTermination = false
 
     /// Fires on the main thread for every decoded stdout line.
     var onEvent: ((BackendEvent) -> Void)?
@@ -40,13 +43,17 @@ final class InstallerProcess {
         process.standardError = FileHandle.standardError
     }
 
+    static func canNotifyTermination(status: Int32?, stdoutEOF: Bool, didNotify: Bool) -> Bool {
+        status != nil && stdoutEOF && !didNotify
+    }
+
     func start() throws {
         stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             self?.handleData(handle.availableData)
         }
         process.terminationHandler = { [weak self] proc in
-            let status = proc.terminationStatus
-            DispatchQueue.main.async { self?.onTerminate?(status) }
+            self?.terminationStatus = proc.terminationStatus
+            self?.notifyTerminationIfDrained()
         }
         try process.run()
     }
@@ -70,13 +77,35 @@ final class InstallerProcess {
     }
 
     private func handleData(_ data: Data) {
-        guard !data.isEmpty else { return } // EOF on the pipe
+        guard !data.isEmpty else {
+            // Process termination and pipe EOF are independent events. Drain
+            // the final bytes before notifying the view model; otherwise the
+            // queued `result` event can arrive after finishBackend() sees a
+            // nil result and incorrectly reports a successful run as failed.
+            stdoutEOF = true
+            stdoutPipe.fileHandleForReading.readabilityHandler = nil
+            if !buffer.isEmpty {
+                handleLine(buffer)
+                buffer.removeAll(keepingCapacity: false)
+            }
+            notifyTerminationIfDrained()
+            return
+        }
         buffer.append(data)
         while let newlineRange = buffer.range(of: Data([0x0A])) {
             let lineData = buffer.subdata(in: buffer.startIndex..<newlineRange.lowerBound)
             buffer.removeSubrange(buffer.startIndex..<newlineRange.upperBound)
             handleLine(lineData)
         }
+    }
+
+    private func notifyTerminationIfDrained() {
+        guard Self.canNotifyTermination(status: terminationStatus, stdoutEOF: stdoutEOF, didNotify: didNotifyTermination), let status = terminationStatus else { return }
+        didNotifyTermination = true
+        // handleLine() queues event delivery on the main queue. This callback
+        // is queued after those deliveries, preserving result-before-terminate
+        // ordering even when the child exits immediately after writing JSON.
+        DispatchQueue.main.async { [weak self] in self?.onTerminate?(status) }
     }
 
     private func handleLine(_ lineData: Data) {

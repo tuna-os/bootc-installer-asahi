@@ -7,8 +7,15 @@ import Foundation
 /// between this Swift model and the JSON Schema (yet).
 struct InstallConfig: Codable {
     var targetImgref: String
-    var rootPartition: String
-    var espPartition: String
+    /// DEV/TEST OVERRIDE ONLY. The agent resolves the install target at runtime
+    /// from the backend-recorded PARTUUID in stub_info.json (issue #22). The macOS
+    /// app cannot produce a correct Linux device name — it knows the partition as
+    /// "disk0s5" while Linux sees "nvme0n1p5" — so production should omit this
+    /// field entirely. A config without it succeeds only when stub_info.json is
+    /// present at first boot.
+    var rootPartition: String?
+    /// DEV/TEST OVERRIDE ONLY. Same status as rootPartition.
+    var espPartition: String?
     var filesystem: String // "xfs" | "ext4" | "btrfs"
     var hostname: String
     var encryption: Encryption?
@@ -73,6 +80,19 @@ struct CatalogEntry: Codable, Identifiable, Hashable {
     var stream: String      // e.g. "stable"
     var imgref: String       // e.g. "ghcr.io/tuna-os/bonito:gnome-asahi"
     var description: String
+    /// cosign certificate-identity (REQUIRED — the agent refuses a config
+    /// without it, and this struct is the only producer of such configs).
+    /// See issue #24.
+    var cosignIdentity: String
+    /// cosign OIDC issuer, paired with cosignIdentity (REQUIRED — a
+    /// half-policy is refused exactly like a missing one).
+    var cosignIssuer: String
+    /// Harness-verified gate (#41): only entries that have passed the Asahi
+    /// golden-manifest harness (tuna-os/tunaOS#910) are marked verified.
+    /// The catalog view refuses to offer unverified entries — a user must
+    /// never complete the recoveryOS blessing flow with an image that has
+    /// not been proven bootable on Apple hardware.
+    var verified: Bool
 }
 
 struct Catalog: Codable {

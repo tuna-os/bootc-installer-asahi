@@ -33,30 +33,39 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.23"
+          go-version: "1.27"
 
       - name: Login to GHCR
         run: echo "${{ github.token }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Build bootstrap image
+        # Dispatch inputs travel via env, never interpolated into the script
+        # body (bootc-installer-asahi#75).
         env:
           BASE_IMAGE: ${{ inputs.base_image || 'ghcr.io/tuna-os/bonito:gnome-asahi' }}
-        run: ./scripts/build-bootstrap-image.sh "${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}"
+          BOOTSTRAP_TAG: ${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}
+        run: ./scripts/build-bootstrap-image.sh "$BOOTSTRAP_TAG"
 
       # Verify the contract INSIDE the image before publishing, so a broken
       # bootstrap never becomes a payload. Cheaper and clearer than discovering
       # it later from a payload verifier's mounted rootfs.
       - name: Verify the bootstrap contract
+        env:
+          BOOTSTRAP_TAG: ${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}
         run: |
-          TAG="${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}"
+          TAG="$BOOTSTRAP_TAG"
           fail=0
           check() { # description test-command...
             if podman run --rm --entrypoint /bin/sh "$TAG" -c "$2" >/dev/null 2>&1; then
@@ -77,11 +86,16 @@ jobs:
           # The agent's own selftest, run against the agent AS SHIPPED rather
           # than against the copy in the repo — the whole point is to catch a
           # staging or permissions mistake that only exists inside the image.
+          # test-agent.sh also sources the recipe adapter and runs
+          # test-agent-device.sh from its own directory; point both at the
+          # shipped libraries the same way.
           echo "  -- agent selftest inside the image --"
           podman run --rm -v "$PWD/components/bootsahi-agent:/t:ro" --entrypoint /bin/bash "$TAG" \
-            -c 'cp /t/test-agent.sh /tmp/ && sed -i "s#\$HERE/bootsahi-agent.sh#/usr/libexec/bootsahi-agent#" /tmp/test-agent.sh && bash /tmp/test-agent.sh' || fail=1
+            -c 'cp /t/test-agent.sh /t/test-agent-device.sh /tmp/ && sed -i -e "s#\$HERE/bootsahi-agent.sh#/usr/libexec/bootsahi-agent#" -e "s#\$HERE/bootsahi-agent-recipe.sh#/usr/libexec/bootsahi-agent-recipe.sh#" /tmp/test-agent.sh && sed -i "s#\$HERE/bootsahi-agent-device.sh#/usr/libexec/bootsahi-agent-device.sh#" /tmp/test-agent-device.sh && bash /tmp/test-agent.sh' || fail=1
           [ "$fail" -eq 0 ]
 
       - name: Push
         if: ${{ inputs.push }}
-        run: podman push "${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}"
+        env:
+          BOOTSTRAP_TAG: ${{ inputs.tag || 'ghcr.io/tuna-os/bootsahi-bootstrap:latest' }}
+        run: podman push "$BOOTSTRAP_TAG"

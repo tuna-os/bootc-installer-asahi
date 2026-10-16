@@ -291,6 +291,63 @@ check_exit "exit code (unresolvable PARTUUID)" 1 "$r"
 check "no recipe generated for an unresolvable PARTUUID" "" "$(ls "$WORK/recipe-captured.json" 2>/dev/null || true)"
 
 echo
+echo "==> refuses a SWAPPED UUID (target PARTUUID pointing to the bootstrap)"
+# The target's recorded PARTUUID is the bootstrap's actual UUID — so the
+# resolved device is the bootstrap partition. verify_target refuses it
+# because it IS mounted (the bootstrap is running from it).
+jq --arg u "$BOOTSTRAP_UUID" '(.partitions[] | select(.role=="target") | .uuid) = $u' \
+	"$WORK/stub_info.json" >"$WORK/stub-swapped.json"
+rm -f "$WORK/recipe-captured.json"
+r=$(run_agent "$WORK/stub-swapped.json")
+check_exit "exit code (swapped UUID -> bootstrap as target)" 1 "$r"
+check "no recipe generated for a swapped UUID" "" "$(ls "$WORK/recipe-captured.json" 2>/dev/null || true)"
+
+echo
+echo "==> refuses an Apple APFS partition type on the target"
+# Change the target's GPT type to APFS (7C3457EF-...). The PARTUUID still
+# points to a valid block device, but the type says this is not a Linux
+# filesystem — tampered stub_info, or the backend recorded the wrong partition.
+sgdisk --typecode=3:7C3457EF-0000-11AA-AA11-00306543ECAC "$WORK/disk.img" >/dev/null
+udevadm settle 2>/dev/null || sleep 1
+rm -f "$WORK/recipe-captured.json"
+r=$(run_agent "$WORK/stub_info.json")
+check_exit "exit code (Apple APFS type on target)" 1 "$r"
+check "no recipe generated for an Apple GPT type" "" "$(ls "$WORK/recipe-captured.json" 2>/dev/null || true)"
+# Restore the correct type so later tests (if any are added) are not affected.
+sgdisk --typecode=3:8300 "$WORK/disk.img" >/dev/null
+udevadm settle 2>/dev/null || sleep 1
+
+echo
+echo "==> refuses a non-Linux, non-ESP GPT type on the target"
+# Change the target to "Microsoft basic data" — plausible on a dual-boot
+# machine but not an install target the backend created.
+sgdisk --typecode=3:EBD0A0A2-B9E5-4433-87C0-68B6B72699C7 "$WORK/disk.img" >/dev/null
+udevadm settle 2>/dev/null || sleep 1
+rm -f "$WORK/recipe-captured.json"
+r=$(run_agent "$WORK/stub_info.json")
+check_exit "exit code (non-Linux GPT type on target)" 1 "$r"
+# Restore.
+sgdisk --typecode=3:8300 "$WORK/disk.img" >/dev/null
+udevadm settle 2>/dev/null || sleep 1
+
+echo
+echo "==> refuses when stub_info.json has no partition with the target role"
+jq 'del(.partitions[] | select(.role == "target"))' \
+	"$WORK/stub_info.json" >"$WORK/stub-no-target.json"
+rm -f "$WORK/recipe-captured.json"
+r=$(run_agent "$WORK/stub-no-target.json")
+check_exit "exit code (no partition with role 'target')" 1 "$r"
+check "no recipe generated when role is absent" "" "$(ls "$WORK/recipe-captured.json" 2>/dev/null || true)"
+
+echo
+echo "==> refuses when the target role has no PARTUUID at all"
+jq '(.partitions[] | select(.role=="target") | .uuid) = null' \
+	"$WORK/stub_info.json" >"$WORK/stub-null-uuid.json"
+rm -f "$WORK/recipe-captured.json"
+r=$(run_agent "$WORK/stub-null-uuid.json")
+check_exit "exit code (null PARTUUID)" 1 "$r"
+
+echo
 if [ "$fail" -ne 0 ]; then
 	echo "DISK SELFTEST FAILED"
 	exit 1

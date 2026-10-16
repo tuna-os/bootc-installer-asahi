@@ -1,0 +1,23 @@
+{
+  "//": "Evidence ledger for catalog.json's `verified` field (#70). Every entry catalog.json marks verified:true must have a matching record here, with a clean passRate and a harnessRef a reviewer can open and check. scripts/validate-catalog.sh enforces the pairing in CI. This is a hand-maintained interim guard, not the CI-generated harness feed DESIGN.md describes (tracked separately in ROADMAP.md's Alpha checklist, tuna-os/tunaOS#910) -- it exists so flipping the boolean alone can no longer pass review or CI.",
+  "records": [
+    {
+      "variant": "bonito",
+      "desktop": "gnome",
+      "stream": "stable",
+      "imgref": "ghcr.io/tuna-os/bonito:gnome-asahi",
+      "passRate": "36/36",
+      "harnessRef": "https://github.com/tuna-os/tunaOS/issues/776",
+      "verifiedAt": "2026-07-30"
+    },
+    {
+      "variant": "grouper",
+      "desktop": "gnome",
+      "stream": "stable",
+      "imgref": "ghcr.io/tuna-os/grouper:gnome-asahi",
+      "passRate": "36/36",
+      "harnessRef": "https://github.com/tuna-os/tunaOS/issues/776",
+      "verifiedAt": "2026-07-30"
+    }
+  ]
+}

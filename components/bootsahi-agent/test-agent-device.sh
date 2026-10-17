@@ -153,6 +153,25 @@ res=$(resolve_install_devices "$WORK/plain-config.json")
 check "dev override resolves config paths" "/dev/nvme0n1p5 /dev/nvme0n1p4" "$res"
 unset BOOTSAHI_ALLOW_CONFIG_DEVICES
 
+echo "==> verify_target: unknown GPT types are refused"
+block_device_id() { printf '8:1\n'; }
+active_root_device_id() { return 1; }
+device_is_mounted() { return 1; }
+parent_disk_of() { return 1; }
+gpt_type_of() {
+	case "$1" in
+		/dev/known-target) printf '0FC63DAF-8483-4772-8E79-3D69D8477DE4\n' ;;
+	esac
+}
+set +e
+verify_target /dev/unknown-target /dev/unknown-esp >/dev/null 2>&1
+target_status=$?
+verify_target /dev/known-target /dev/unknown-esp >/dev/null 2>&1
+esp_status=$?
+set -e
+check "unknown target GPT type refused" 1 "$target_status"
+check "unknown ESP GPT type refused" 1 "$esp_status"
+
 if [ "$fail" -ne 0 ]; then
 	echo "DEVICE UNIT TESTS FAILED"
 	exit 1
